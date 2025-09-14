@@ -26,17 +26,14 @@ jobs:
 
       - name: Get latest release tag
         id: latest
+        env:
+          TOKEN: ${{ github.token }}
         run: |
           set -e
-          TOKEN="${{ secrets.TOKEN }}"
-          if [ -z "$TOKEN" ]; then TOKEN="${{ secrets.GITHUB_TOKEN }}"; fi
-
           LATEST_TAG=$(curl -s -H "Authorization: token ${TOKEN}" \
             https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r '.tag_name // empty')
-
           if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then LATEST_TAG="0.0.0"; fi
           LATEST_VERSION=$(printf "%s" "$LATEST_TAG" | sed -E 's/^[^0-9]*//')
-
           echo "LATEST_TAG=$LATEST_TAG"           >> $GITHUB_ENV
           echo "LATEST_VERSION=$LATEST_VERSION"   >> $GITHUB_ENV
           echo "LATEST_VERSION=$LATEST_VERSION"
@@ -49,7 +46,6 @@ jobs:
           RAW_VERSION=$(head -n1 version.txt | tr -d '\r' | xargs)
           [ -n "$RAW_VERSION" ] || { echo "version.txt est vide"; exit 1; }
           VERSION=$(printf "%s" "$RAW_VERSION" | sed -E 's/^[^0-9]*//')
-
           echo "VERSION=$VERSION"         >> $GITHUB_ENV
           echo "version=$VERSION"         >> $GITHUB_OUTPUT
           echo "VERSION=$VERSION"
@@ -91,9 +87,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          if (Test-Path "requirements.txt") {
-            python -m pip install -r requirements.txt
-          }
+          if (Test-Path "requirements.txt") { python -m pip install -r requirements.txt }
           python -m pip install "pyinstaller>=6.0"
           pyinstaller --version
 
@@ -116,13 +110,20 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path "build-res" | Out-Null
 
-          $ico = "scanner/assets/IoC-Scanner.ico"
-          if (!(Test-Path $ico)) { Write-Error "Icon not found: $ico"; exit 1 }
+          # Cherche une icône dans scanner\assets, puis fallback root
+          $icoCandidates = @(
+            "scanner\assets\IoC-Scanner_lighter.ico",
+            "scanner\assets\IoC-Scanner.ico",
+            "scanner\assets\icon.ico",
+            "icon.ico"
+          )
+          $ico = $null; foreach ($p in $icoCandidates) { if (Test-Path $p) { $ico = $p; break } }
+          if (-not $ico) { Write-Error "Aucune icône .ico trouvée (scanner\assets ou racine)"; exit 1 }
+          "WIN_ICO=$ico" >> $env:GITHUB_ENV
 
-          $ver = "${{ needs.build.outputs.version }}"
-          if ([string]::IsNullOrWhiteSpace($ver)) { $ver = "0.0.0" }
+          $ver = "${{ needs.build.outputs.version }}"; if ([string]::IsNullOrWhiteSpace($ver)) { $ver = "0.0.0" }
 
-          # VSVersionInfo (inchangé)
+          # VSVersionInfo pour --version-file (placeholders remplacés ensuite)
           Set-Content build-res\file_version.txt @'
           # UTF-8
           VSVersionInfo(
@@ -141,9 +142,13 @@ jobs:
               VarFileInfo([VarStruct('Translation', [1033, 1200])])
             ]
           )
-          '@.Replace('{{VER}}', ($ver -replace '\.', ', ')).Replace('{{VERSTR}}', $ver)
+          '@
 
-          # Manifest XML valide
+          (Get-Content build-res\file_version.txt -Raw).
+            Replace('{{VER}}', ($ver -replace '\.', ', ')).
+            Replace('{{VERSTR}}', $ver) | Set-Content build-res\file_version.txt
+
+          # Manifest XML valide (asInvoker + compat + Common-Controls v6)
           Set-Content build-res\app.manifest @'
           <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
           <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
@@ -154,15 +159,11 @@ jobs:
                 </requestedPrivileges>
               </security>
             </trustInfo>
-          
-            <!-- Compatibilité Windows 10/11 -->
             <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
               <application>
                 <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
               </application>
             </compatibility>
-          
-            <!-- Thèmes / Common Controls v6 -->
             <dependency>
               <dependentAssembly>
                 <assemblyIdentity type="win32"
@@ -179,53 +180,52 @@ jobs:
       - name: Build Windows Standalone (CLI)
         shell: pwsh
         run: |
-          $version = "${{ needs.build.outputs.version }}"
-          if ([string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
+          $version = "${{ needs.build.outputs.version }}"; if ([string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
           $exeName = "IoCScanner_CLI_Windows_v$version"
           "WINDOWS_CLI_EXE=$exeName.exe" >> $env:GITHUB_ENV
+          $ico = "${{ env.WIN_ICO }}"
 
-          pyinstaller --noconfirm --clean --onefile --noupx --console `
-            --name $exeName `
-            --icon "scanner/assets/IoC-Scanner.ico" `
-            --version-file "build-res/file_version.txt" `
-            --manifest "build-res/app.manifest" `
-            entry_cli.py
+          $args = @(
+            "--noconfirm","--onefile","--clean","--noupx",
+            "--console",
+            "--name",$exeName,
+            "--icon",$ico,
+            "--add-data",("$ico;.")
+          )
 
+          pyinstaller @args --version-file "build-res/file_version.txt" --manifest "build-res/app.manifest" entry_cli.py
           if (!(Test-Path "dist\$exeName.exe")) { Write-Error "EXE CLI manquant"; exit 1 }
 
-      - name: Build Windows Standalone (GUI)  # onefile
+          # Force l’icône (filet de sécurité)
+          $rc = "$env:RUNNER_TEMP\rcedit.exe"
+          Invoke-WebRequest -Uri "https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe" -OutFile $rc -UseBasicParsing
+          & $rc "dist\$exeName.exe" --set-icon $ico
+
+      - name: Build Windows Standalone (GUI)
         shell: pwsh
         run: |
-          $version = "${{ needs.build.outputs.version }}"
-          if ([string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
+          $version = "${{ needs.build.outputs.version }}"; if ([string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
           $exeName = "IoCScanner_GUI_Windows_v$version"
           "WINDOWS_GUI_EXE=$exeName.exe" >> $env:GITHUB_ENV
+          $ico = "${{ env.WIN_ICO }}"
 
-          pyinstaller --noconfirm --clean --onefile --noupx --windowed `
-            --name $exeName `
-            --icon "scanner/assets/IoC-Scanner.ico" `
-            --version-file "build-res/file_version.txt" `
-            --manifest "build-res/app.manifest" `
-            entry_gui.py
+          $args = @(
+            "--noconfirm","--onefile","--clean","--noupx",
+            "--windowed",
+            "--name",$exeName,
+            "--collect-all","tkinterdnd2",
+            "--hidden-import","tkinterdnd2",
+            "--icon",$ico,
+            "--add-data",("$ico;.")
+          )
 
+          pyinstaller @args --version-file "build-res/file_version.txt" --manifest "build-res/app.manifest" entry_gui.py
           if (!(Test-Path "dist\$exeName.exe")) { Write-Error "EXE GUI manquant"; exit 1 }
 
-      - name: Build Windows Standalone (GUI - onedir alternatif)
-        shell: pwsh
-        run: |
-          $version = "${{ needs.build.outputs.version }}"
-          if ([string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
-          $dirName = "IoCScanner_GUI_Windows_onedir_v$version"
-
-          pyinstaller --noconfirm --clean --onedir --noupx --windowed `
-            --name $dirName `
-            --icon "scanner/assets/IoC-Scanner.ico" `
-            --version-file "build-res/file_version.txt" `
-            --manifest "build-res/app.manifest" `
-            entry_gui.py
-
-          if (!(Test-Path "dist\$dirName\$dirName.exe")) { Write-Error "EXE GUI onedir manquant"; exit 1 }
-          Compress-Archive -Path "dist\$dirName\*" -DestinationPath "dist\$dirName.zip" -Force
+          # Force l’icône (filet de sécurité)
+          $rc = "$env:RUNNER_TEMP\rcedit.exe"
+          Invoke-WebRequest -Uri "https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe" -OutFile $rc -UseBasicParsing
+          & $rc "dist\$exeName.exe" --set-icon $ico
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -234,7 +234,6 @@ jobs:
           path: |
             dist/${{ env.WINDOWS_CLI_EXE }}
             dist/${{ env.WINDOWS_GUI_EXE }}
-            dist/IoCScanner_GUI_Windows_onedir_v*.zip
           if-no-files-found: error
           retention-days: 7
 
@@ -245,13 +244,11 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
       - name: Setup Python 3.13
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
           cache: 'pip'
-
       - name: Install system deps (Tk) + PyInstaller
         run: |
           sudo apt-get update
@@ -260,7 +257,6 @@ jobs:
           [ -f requirements.txt ] && python -m pip install -r requirements.txt || true
           python -m pip install "pyinstaller>=6.0"
           pyinstaller --version
-
       - name: Create entrypoints (CLI & GUI)
         run: |
           cat > entry_cli.py << 'PY'
@@ -273,10 +269,8 @@ jobs:
           if __name__ == "__main__":
               launch_gui()
           PY
-
       - name: Build Linux Standalone (CLI)
-        env:
-          VERSION: ${{ needs.build.outputs.version }}
+        env: { VERSION: ${{ needs.build.outputs.version }} }
         run: |
           set -e
           version="${VERSION:-0.0.0}"
@@ -284,10 +278,8 @@ jobs:
           echo "LINUX_CLI_BIN=${exeName}" >> $GITHUB_ENV
           pyinstaller --noconfirm --clean --noupx --onefile --console --name "$exeName" entry_cli.py
           [ -f "dist/$exeName" ]
-
       - name: Build Linux Standalone (GUI)
-        env:
-          VERSION: ${{ needs.build.outputs.version }}
+        env: { VERSION: ${{ needs.build.outputs.version }} }
         run: |
           set -e
           version="${VERSION:-0.0.0}"
@@ -295,12 +287,10 @@ jobs:
           echo "LINUX_GUI_BIN=${exeName}" >> $GITHUB_ENV
           pyinstaller --noconfirm --clean --noupx --onefile --windowed --name "$exeName" entry_gui.py
           [ -f "dist/$exeName" ]
-
       - name: Archive Linux binaries
         run: |
           tar -C dist -czf dist/IoCScanner_Linux_binaries.tar.gz \
             "${LINUX_CLI_BIN}" "${LINUX_GUI_BIN}"
-
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
@@ -316,20 +306,17 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
       - name: Setup Python 3.13
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
           cache: 'pip'
-
       - name: Install Python deps (+ PyInstaller)
         run: |
           python -m pip install --upgrade pip
           [ -f requirements.txt ] && python -m pip install -r requirements.txt || true
           python -m pip install "pyinstaller>=6.0"
           pyinstaller --version
-
       - name: Create entrypoints (CLI & GUI)
         run: |
           cat > entry_cli.py << 'PY'
@@ -342,10 +329,8 @@ jobs:
           if __name__ == "__main__":
               launch_gui()
           PY
-
       - name: Build macOS (CLI)
-        env:
-          VERSION: ${{ needs.build.outputs.version }}
+        env: { VERSION: ${{ needs.build.outputs.version }} }
         run: |
           set -e
           version="${VERSION:-0.0.0}"
@@ -353,10 +338,8 @@ jobs:
           echo "MAC_CLI_BIN=${exeName}" >> $GITHUB_ENV
           pyinstaller --noconfirm --clean --noupx --onefile --console --name "$exeName" entry_cli.py
           [ -f "dist/$exeName" ]
-
       - name: Build macOS (GUI)
-        env:
-          VERSION: ${{ needs.build.outputs.version }}
+        env: { VERSION: ${{ needs.build.outputs.version }} }
         run: |
           set -e
           version="${VERSION:-0.0.0}"
@@ -364,12 +347,10 @@ jobs:
           echo "MAC_GUI_BIN=${exeName}" >> $GITHUB_ENV
           pyinstaller --noconfirm --clean --noupx --onefile --windowed --name "$exeName" entry_gui.py
           [ -f "dist/$exeName" ]
-
       - name: Zip macOS binaries
         run: |
           cd dist && /usr/bin/zip -r IoCScanner_macOS_binaries.zip \
             "${MAC_CLI_BIN}" "${MAC_GUI_BIN}"
-
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
@@ -385,22 +366,13 @@ jobs:
     steps:
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
-        with:
-          name: windows-bin
-          path: dist/
-
+        with: { name: windows-bin, path: dist/ }
       - name: Download Linux artifact
         uses: actions/download-artifact@v4
-        with:
-          name: linux-bin
-          path: dist/
-
+        with: { name: linux-bin, path: dist/ }
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
-        with:
-          name: macos-app
-          path: dist/
-
+        with: { name: macos-app, path: dist/ }
       - name: Create/Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -408,10 +380,9 @@ jobs:
           name: IoC-Scanner v${{ needs.build.outputs.version }}
           body: |
             Windows, Linux & macOS standalone builds.
-            - Windows: onefile (CLI/GUI) + alternative GUI onedir .zip
+            - Windows: onefile (CLI/GUI) avec manifest & version info + icône forcée
             - Linux: onefile (CLI/GUI)
             - macOS: onefile (CLI/GUI)
-          files: |
-            dist/**/*
+          files: dist/**/*
         env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
