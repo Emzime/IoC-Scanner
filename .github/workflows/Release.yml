@@ -134,10 +134,13 @@ jobs:
             "--noconfirm","--onefile","--clean","--noupx",
             "--windowed",
             "--name",$exeName,
-            "--add-data","scanner\assets\icon.ico",
+            "--icon","scanner\assets\icon.ico",
+            "--add-data","scanner\assets\icon.ico;assets",
+            "--add-data","scanner\assets\icon.png;assets",
             "--version-file","build-res\file_version.txt",
             "--manifest","build-res\app.manifest"
           )
+
           if (Test-Path "scanner\assets\icon.ico") {
             $args += @("--icon","scanner\assets\icon.ico")
           }
