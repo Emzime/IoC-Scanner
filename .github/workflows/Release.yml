@@ -71,13 +71,12 @@ jobs:
 
   Windows_Standalone_Build:
     if: ${{ needs.build.outputs.should_release == 'true' }}
-    runs-on: windows-latest
+    runs-on: windows-2022  # pin pour stabilité (évite migration auto vers 2025)
     needs: [ build ]
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # ⚠️ Optionnel, mais recommandé : 3.11 est souvent mieux toléré par les AV que 3.13
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -92,14 +91,9 @@ jobs:
           python -m pip install "pyinstaller>=6.0"
           pyinstaller --version
 
-      - name: Create entrypoints (CLI & GUI)
+      - name: Create entrypoint (GUI only)
         shell: pwsh
         run: |
-          Set-Content entry_cli.py @"
-          from scanner.cli import main
-          if __name__ == "__main__":
-              main()
-          "@
           Set-Content entry_gui.py @"
           from scanner.gui import launch_gui
           if __name__ == "__main__":
@@ -111,7 +105,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path "build-res" | Out-Null
           $ver = "${{ needs.build.outputs.version }}"; if ([string]::IsNullOrWhiteSpace($ver)) { $ver = "0.0.0" }
-  
+
           # VSVersionInfo
           Set-Content build-res\file_version.txt @'
           # UTF-8
@@ -135,8 +129,8 @@ jobs:
           (Get-Content build-res\file_version.txt -Raw).
             Replace('{{VER}}', ($ver -replace '\.', ', ')).
             Replace('{{VERSTR}}', $ver) | Set-Content build-res\file_version.txt
-  
-          # Manifest (asInvoker + compat + Common-Controls v6)
+
+          # Manifest asInvoker + compat + Common-Controls v6
           Set-Content build-res\app.manifest @'
           <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
           <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
@@ -165,64 +159,39 @@ jobs:
           </assembly>
           '@
 
-      - name: Build Windows (CLI) — onefile, runtime local (pas %TEMP%)
-        shell: pwsh
-        run: |
-          $version   = "${{ needs.build.outputs.version }}"; if ([string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
-          $exeName   = "IoCScanner_CLI_Windows_v$version"
-          "WINDOWS_CLI_EXE=$exeName.exe" >> $env:GITHUB_ENV
-          $entryPath = (Resolve-Path "entry_cli.py").Path
-  
-          $args = @(
-            "--noconfirm","--onefile","--clean","--noupx",
-            "--console",
-            "--runtime-tmpdir",".\_ioc_rt",    # ← évite %TEMP%
-            "--name",$exeName,
-            "--version-file","build-res\file_version.txt",
-            "--manifest","build-res\app.manifest",
-            "--hidden-import","tkinterdnd2"    # suffisant pour ce package
-          )
-          if (Test-Path "scanner\assets\icon.ico") {
-            $args += @("--icon","scanner\assets\icon.ico")   # pas de --add-data
-          }
-  
-          & pyinstaller @args $entryPath
-          if (!(Test-Path "dist\$exeName.exe")) {
-            Write-Error "EXE CLI manquant"; exit 1
-          }
-
-      - name: Build Windows (GUI) — onefile, runtime local (pas %TEMP%)
+      - name: Build Windows (GUI) — onefile
         shell: pwsh
         run: |
           $version   = "${{ needs.build.outputs.version }}"; if ([string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
           $exeName   = "IoCScanner_GUI_Windows_v$version"
           "WINDOWS_GUI_EXE=$exeName.exe" >> $env:GITHUB_ENV
           $entryPath = (Resolve-Path "entry_gui.py").Path
-          
+
           $args = @(
             "--noconfirm","--onefile","--clean","--noupx",
             "--windowed",
-            "--runtime-tmpdir",".\_ioc_rt",
             "--name",$exeName,
             "--version-file","build-res\file_version.txt",
             "--manifest","build-res\app.manifest"
           )
+          # Icône directe (pas de --add-data pour l'icône)
           if (Test-Path "scanner\assets\icon.ico") {
-            $args += @("--icon","scanner\assets\icon.ico")  # pas de --add-data
-          }
-          
-          & pyinstaller @args $entryPath
-          if (!(Test-Path "dist\$exeName.exe")) {
-            Write-Error "EXE GUI manquant"; exit 1
+            $args += @("--icon","scanner\assets\icon.ico")
           }
 
-      - name: Upload Windows artifacts
+          & pyinstaller @args $entryPath
+
+          if (!(Test-Path "dist\$exeName.exe")) {
+            Write-Error "EXE GUI manquant"; exit 1
+          } else {
+            Write-Host "✅ EXE généré: dist\$exeName.exe"
+          }
+
+      - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-bin
-          path: |
-            dist/${{ env.WINDOWS_CLI_EXE }}
-            dist/${{ env.WINDOWS_GUI_EXE }}
+          path: dist/${{ env.WINDOWS_GUI_EXE }}
           if-no-files-found: error
           retention-days: 7
 
@@ -271,9 +240,9 @@ jobs:
           exeName="IoCScanner_CLI_Linux_v${version}"
           echo "LINUX_CLI_BIN=${exeName}" >> $GITHUB_ENV
           ARGS=( --noconfirm --clean --noupx --onefile --console --name "$exeName" )
-          # Icône PNG dans assets (optionnelle)
+          # Icône PNG (optionnelle)
           if [ -f "scanner/assets/icon.png" ]; then
-            ARGS+=( --icon scanner/assets/icon.png --add-data "scanner/assets/icon.png:." )
+            ARGS+=( --icon scanner/assets/icon.png )
           fi
           pyinstaller "${ARGS[@]}" entry_cli.py
           [ -f "dist/$exeName" ]
@@ -286,13 +255,10 @@ jobs:
           version="${VERSION:-0.0.0}"
           exeName="IoCScanner_GUI_Linux_v${version}"
           echo "LINUX_GUI_BIN=${exeName}" >> $GITHUB_ENV
-          ARGS=( --noconfirm --clean --noupx --onefile --windowed
-                 --name "$exeName"
-                 --collect-all tkinterdnd2
-                 --hidden-import tkinterdnd2 )
-          # Icône PNG dans assets (optionnelle)
+          ARGS=( --noconfirm --clean --noupx --onefile --windowed --name "$exeName" )
+          # Icône PNG (optionnelle)
           if [ -f "scanner/assets/icon.png" ]; then
-            ARGS+=( --icon scanner/assets/icon.png --add-data "scanner/assets/icon.png:." )
+            ARGS+=( --icon scanner/assets/icon.png )
           fi
           pyinstaller "${ARGS[@]}" entry_gui.py
           [ -f "dist/$exeName" ]
@@ -344,7 +310,7 @@ jobs:
               launch_gui()
           PY
 
-      # Génère un .icns valide à partir du PNG dans scanner/assets
+      # Génère un .icns valide depuis le PNG
       - name: Generate scanner/assets/icon.icns from scanner/assets/icon.png
         run: |
           set -e
@@ -352,17 +318,14 @@ jobs:
             echo "❌ scanner/assets/icon.png introuvable. Ajoute un PNG source."
             exit 1
           fi
-  
           rm -f scanner/assets/icon.icns
           rm -rf scanner/assets/icon.iconset
           mkdir -p scanner/assets/icon.iconset
-  
           for size in 16 32 64 128 256 512; do
             sips -z $size $size scanner/assets/icon.png --out scanner/assets/icon.iconset/icon_${size}x${size}.png > /dev/null
             dbl=$((size*2))
             sips -z $dbl $dbl scanner/assets/icon.png --out scanner/assets/icon.iconset/icon_${size}x${size}@2x.png > /dev/null
           done
-  
           iconutil -c icns scanner/assets/icon.iconset -o scanner/assets/icon.icns
           ls -lh scanner/assets/icon.icns
 
@@ -374,10 +337,8 @@ jobs:
           version="${VERSION:-0.0.0}"
           exeName="IoCScanner_CLI_macOS_v${version}"
           echo "MAC_CLI_BIN=${exeName}" >> $GITHUB_ENV
-  
           ARGS=( --noconfirm --clean --noupx --onefile --console --name "$exeName" )
           ARGS+=( --icon scanner/assets/icon.icns )
-  
           pyinstaller "${ARGS[@]}" entry_cli.py
           [ -f "dist/$exeName" ]
 
@@ -389,13 +350,9 @@ jobs:
           version="${VERSION:-0.0.0}"
           exeName="IoCScanner_GUI_macOS_v${version}"
           echo "MAC_GUI_BIN=${exeName}" >> $GITHUB_ENV
-  
           ARGS=( --noconfirm --clean --noupx --onefile --windowed
-                 --name "$exeName"
-                 --collect-all tkinterdnd2
-                 --hidden-import tkinterdnd2 )
+                 --name "$exeName" )
           ARGS+=( --icon scanner/assets/icon.icns )
-  
           pyinstaller "${ARGS[@]}" entry_gui.py
           [ -f "dist/$exeName" ]
 
@@ -411,7 +368,6 @@ jobs:
           path: dist/IoCScanner_macOS_binaries.zip
           if-no-files-found: error
           retention-days: 7
-
 
   release:
     if: ${{ needs.build.outputs.should_release == 'true' }}
@@ -442,11 +398,10 @@ jobs:
           tag_name: ${{ needs.build.outputs.tag }}
           name: IoC-Scanner v${{ needs.build.outputs.version }}
           body: |
-            Windows, Linux & macOS standalone builds.
-            - Windows: --icon scanner\assets\icon.ico (pas de rcedit)
-            - Linux:   --icon scanner/assets/icon.png
-            - macOS:   --icon scanner/assets/icon.icns
-            Manifest & Version info inclus, UPX désactivé.
+            Windows (GUI only), Linux & macOS standalone builds.
+            - Windows GUI: onefile, manifest & version info, icône depuis scanner\assets\icon.ico, pas d'UPX.
+            - Linux: onefile (CLI/GUI), icône PNG si présente.
+            - macOS: onefile (CLI/GUI), icône .icns générée depuis PNG.
           files: |
             dist/**/*
         env:
