@@ -53,6 +53,17 @@ DEFAULT_SUSPICIOUS_SCRIPT_PATTERNS: List[str] = [
     "chmod\s+\+x\s+/tmp/.*",
     "base64\s+-d\s+.+\|\s*(bash|sh|zsh|python|python3)"
 ]+?\|\s*(bash|sh|zsh|python|python3)",
+    "wget\s+[^|]+?\|\s*(bash|sh|zsh|python|python3)",
+    "Invoke-WebRequest.+\|\s*iex",
+    "bitsadmin\s+/transfer",
+    "powershell\.exe\s+-enc\s+[A-Za-z0-9+/=]+",
+    "Add-MpPreference\s+-Exclusion(Path|Process|Extension)",
+    "reg(?:\.exe)?\s+add\s+HK(?:CU|LM)\\",
+    "(?:schtasks|at)\s+/create",
+    "(?:crontab|systemctl)\s+(?:-|\w+)",
+    "chmod\s+\+x\s+/tmp/.*",
+    "base64\s+-d\s+.+\|\s*(bash|sh|zsh|python|python3)"
+]+?\|\s*(bash|sh|zsh|python|python3)",
     r"wget\s+[^|]+?\|\s*(bash|sh|zsh|python|python3)",
     r"Invoke-WebRequest.+\|\s*iex",
     r"bitsadmin\s+/transfer",
