@@ -354,21 +354,42 @@ jobs:
               launch_gui()
           PY
 
+      # Génère un .icns valide à partir du PNG dans scanner/assets
+      - name: Generate scanner/assets/icon.icns from scanner/assets/icon.png
+        run: |
+          set -e
+          if [ ! -f "scanner/assets/icon.png" ]; then
+            echo "❌ scanner/assets/icon.png introuvable. Ajoute un PNG source."
+            exit 1
+          fi
+  
+          rm -f scanner/assets/icon.icns
+          rm -rf scanner/assets/icon.iconset
+          mkdir -p scanner/assets/icon.iconset
+  
+          for size in 16 32 64 128 256 512; do
+            sips -z $size $size scanner/assets/icon.png --out scanner/assets/icon.iconset/icon_${size}x${size}.png > /dev/null
+            dbl=$((size*2))
+            sips -z $dbl $dbl scanner/assets/icon.png --out scanner/assets/icon.iconset/icon_${size}x${size}@2x.png > /dev/null
+          done
+  
+          iconutil -c icns scanner/assets/icon.iconset -o scanner/assets/icon.icns
+          ls -lh scanner/assets/icon.icns
+
       - name: Build macOS (CLI)
         env:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -e
           version="${VERSION:-0.0.0}"
-          appName="IoCScanner_CLI_macOS_v${version}"
-          echo "MAC_CLI_BIN=${appName}" >> $GITHUB_ENV
-          ARGS=( --noconfirm --clean --noupx --onefile --console --name "$appName" )
-          # Icône ICNS dans assets (optionnelle)
-          if [ -f "scanner/assets/icon.icns" ]; then
-            ARGS+=( --icon scanner/assets/icon.icns )
-          fi
+          exeName="IoCScanner_CLI_macOS_v${version}"
+          echo "MAC_CLI_BIN=${exeName}" >> $GITHUB_ENV
+  
+          ARGS=( --noconfirm --clean --noupx --onefile --console --name "$exeName" )
+          ARGS+=( --icon scanner/assets/icon.icns )
+  
           pyinstaller "${ARGS[@]}" entry_cli.py
-          [ -f "dist/$appName" ]
+          [ -f "dist/$exeName" ]
 
       - name: Build macOS (GUI)
         env:
@@ -376,17 +397,17 @@ jobs:
         run: |
           set -e
           version="${VERSION:-0.0.0}"
-          appName="IoCScanner_GUI_macOS_v${version}"
-          echo "MAC_GUI_BIN=${appName}" >> $GITHUB_ENV
-          ARGS=( --noconfirm --clean --noupx --windowed --name "$appName"
+          exeName="IoCScanner_GUI_macOS_v${version}"
+          echo "MAC_GUI_BIN=${exeName}" >> $GITHUB_ENV
+  
+          ARGS=( --noconfirm --clean --noupx --onefile --windowed
+                 --name "$exeName"
                  --collect-all tkinterdnd2
                  --hidden-import tkinterdnd2 )
-          # Icône ICNS dans assets (optionnelle)
-          if [ -f "scanner/assets/icon.icns" ]; then
-            ARGS+=( --icon scanner/assets/icon.icns )
-          fi
+          ARGS+=( --icon scanner/assets/icon.icns )
+  
           pyinstaller "${ARGS[@]}" entry_gui.py
-          [ -f "dist/$appName" ]
+          [ -f "dist/$exeName" ]
 
       - name: Zip macOS binaries
         run: |
@@ -400,6 +421,7 @@ jobs:
           path: dist/IoCScanner_macOS_binaries.zip
           if-no-files-found: error
           retention-days: 7
+
 
   release:
     if: ${{ needs.build.outputs.should_release == 'true' }}
