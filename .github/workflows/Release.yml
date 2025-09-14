@@ -105,25 +105,13 @@ jobs:
               launch_gui()
           "@
 
-      - name: Prepare Windows resources (icon + version file + manifest)
+      - name: Prepare Windows resources (version-file + manifest)
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "build-res" | Out-Null
-
-          # Cherche une icône dans scanner\assets, puis fallback root
-          $icoCandidates = @(
-            "scanner\assets\IoC-Scanner_lighter.ico",
-            "scanner\assets\IoC-Scanner.ico",
-            "scanner\assets\icon.ico",
-            "icon.ico"
-          )
-          $ico = $null; foreach ($p in $icoCandidates) { if (Test-Path $p) { $ico = $p; break } }
-          if (-not $ico) { Write-Error "Aucune icône .ico trouvée (scanner\assets ou racine)"; exit 1 }
-          "WIN_ICO=$ico" >> $env:GITHUB_ENV
-
           $ver = "${{ needs.build.outputs.version }}"; if ([string]::IsNullOrWhiteSpace($ver)) { $ver = "0.0.0" }
 
-          # VSVersionInfo (placeholders remplacés ensuite)
+          # VSVersionInfo
           Set-Content build-res\file_version.txt @'
           # UTF-8
           VSVersionInfo(
@@ -143,12 +131,11 @@ jobs:
             ]
           )
           '@
-
           (Get-Content build-res\file_version.txt -Raw).
             Replace('{{VER}}', ($ver -replace '\.', ', ')).
             Replace('{{VERSTR}}', $ver) | Set-Content build-res\file_version.txt
 
-          # Manifest XML valide
+          # Manifest asInvoker + compat + Common-Controls v6
           Set-Content build-res\app.manifest @'
           <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
           <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
@@ -177,37 +164,44 @@ jobs:
           </assembly>
           '@
 
-      - name: Build Windows Standalone (CLI)
+      - name: Build Windows (CLI) — style "Run"
         shell: pwsh
         run: |
-          $version = "${{ needs.build.outputs.version }}"; if ([string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
-          $exeName = "IoCScanner_CLI_Windows_v$version"
+          $version   = "${{ needs.build.outputs.version }}"; if ([string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
+          $exeName   = "IoCScanner_CLI_Windows_v$version"
           "WINDOWS_CLI_EXE=$exeName.exe" >> $env:GITHUB_ENV
-          $ico = "${{ env.WIN_ICO }}"
+          $entryPath = (Resolve-Path "entry_cli.py").Path
 
           $args = @(
             "--noconfirm","--onefile","--clean","--noupx",
             "--console",
             "--name",$exeName,
-            "--icon",$ico,
-            "--add-data",("$ico;.")
+            "--collect-all","tkinterdnd2",
+            "--hidden-import","tkinterdnd2",
+            "--version-file","build-res\file_version.txt",
+            "--manifest","build-res\app.manifest"
           )
+          # Icône directe dans scanner\assets
+          if (Test-Path "scanner\assets\icon.ico") {
+            $args += @("--icon","scanner\assets\icon.ico")
+          }
 
-          pyinstaller @args --version-file "build-res/file_version.txt" --manifest "build-res/app.manifest" entry_cli.py
-          if (!(Test-Path "dist\$exeName.exe")) { Write-Error "EXE CLI manquant"; exit 1 }
+          & pyinstaller @args $entryPath
 
-          # Force l’icône (filet de sécurité)
-          $rc = "$env:RUNNER_TEMP\rcedit.exe"
-          Invoke-WebRequest -Uri "https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe" -OutFile $rc -UseBasicParsing
-          & $rc "dist\$exeName.exe" --set-icon $ico
+          if (!(Test-Path "dist\$exeName.exe")) {
+            Write-Error "Build terminé mais EXE manquant dans dist/."
+            exit 1
+          } else {
+            Write-Host "✅ EXE généré: dist\$exeName.exe"
+          }
 
-      - name: Build Windows Standalone (GUI)
+      - name: Build Windows (GUI) — style "Run"
         shell: pwsh
         run: |
-          $version = "${{ needs.build.outputs.version }}"; if ([string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
-          $exeName = "IoCScanner_GUI_Windows_v$version"
+          $version   = "${{ needs.build.outputs.version }}"; if ([string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
+          $exeName   = "IoCScanner_GUI_Windows_v$version"
           "WINDOWS_GUI_EXE=$exeName.exe" >> $env:GITHUB_ENV
-          $ico = "${{ env.WIN_ICO }}"
+          $entryPath = (Resolve-Path "entry_gui.py").Path
 
           $args = @(
             "--noconfirm","--onefile","--clean","--noupx",
@@ -215,17 +209,22 @@ jobs:
             "--name",$exeName,
             "--collect-all","tkinterdnd2",
             "--hidden-import","tkinterdnd2",
-            "--icon",$ico,
-            "--add-data",("$ico;.")
+            "--version-file","build-res\file_version.txt",
+            "--manifest","build-res\app.manifest"
           )
+          # Icône directe dans scanner\assets
+          if (Test-Path "scanner\assets\icon.ico") {
+            $args += @("--icon","scanner\assets\icon.ico")
+          }
 
-          pyinstaller @args --version-file "build-res/file_version.txt" --manifest "build-res/app.manifest" entry_gui.py
-          if (!(Test-Path "dist\$exeName.exe")) { Write-Error "EXE GUI manquant"; exit 1 }
+          & pyinstaller @args $entryPath
 
-          # Force l’icône (filet de sécurité)
-          $rc = "$env:RUNNER_TEMP\rcedit.exe"
-          Invoke-WebRequest -Uri "https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe" -OutFile $rc -UseBasicParsing
-          & $rc "dist\$exeName.exe" --set-icon $ico
+          if (!(Test-Path "dist\$exeName.exe")) {
+            Write-Error "Build terminé mais EXE manquant dans dist/."
+            exit 1
+          } else {
+            Write-Host "✅ EXE généré: dist\$exeName.exe"
+          }
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -281,7 +280,12 @@ jobs:
           version="${VERSION:-0.0.0}"
           exeName="IoCScanner_CLI_Linux_v${version}"
           echo "LINUX_CLI_BIN=${exeName}" >> $GITHUB_ENV
-          pyinstaller --noconfirm --clean --noupx --onefile --console --name "$exeName" entry_cli.py
+          ARGS=( --noconfirm --clean --noupx --onefile --console --name "$exeName" )
+          # Icône PNG dans assets (optionnelle)
+          if [ -f "scanner/assets/icon.png" ]; then
+            ARGS+=( --icon scanner/assets/icon.png --add-data "scanner/assets/icon.png:." )
+          fi
+          pyinstaller "${ARGS[@]}" entry_cli.py
           [ -f "dist/$exeName" ]
 
       - name: Build Linux Standalone (GUI)
@@ -292,7 +296,15 @@ jobs:
           version="${VERSION:-0.0.0}"
           exeName="IoCScanner_GUI_Linux_v${version}"
           echo "LINUX_GUI_BIN=${exeName}" >> $GITHUB_ENV
-          pyinstaller --noconfirm --clean --noupx --onefile --windowed --name "$exeName" entry_gui.py
+          ARGS=( --noconfirm --clean --noupx --onefile --windowed
+                 --name "$exeName"
+                 --collect-all tkinterdnd2
+                 --hidden-import tkinterdnd2 )
+          # Icône PNG dans assets (optionnelle)
+          if [ -f "scanner/assets/icon.png" ]; then
+            ARGS+=( --icon scanner/assets/icon.png --add-data "scanner/assets/icon.png:." )
+          fi
+          pyinstaller "${ARGS[@]}" entry_gui.py
           [ -f "dist/$exeName" ]
 
       - name: Archive Linux binaries
@@ -348,10 +360,15 @@ jobs:
         run: |
           set -e
           version="${VERSION:-0.0.0}"
-          exeName="IoCScanner_CLI_macOS_v${version}"
-          echo "MAC_CLI_BIN=${exeName}" >> $GITHUB_ENV
-          pyinstaller --noconfirm --clean --noupx --onefile --console --name "$exeName" entry_cli.py
-          [ -f "dist/$exeName" ]
+          appName="IoCScanner_CLI_macOS_v${version}"
+          echo "MAC_CLI_BIN=${appName}" >> $GITHUB_ENV
+          ARGS=( --noconfirm --clean --noupx --onefile --console --name "$appName" )
+          # Icône ICNS dans assets (optionnelle)
+          if [ -f "scanner/assets/icon.icns" ]; then
+            ARGS+=( --icon scanner/assets/icon.icns )
+          fi
+          pyinstaller "${ARGS[@]}" entry_cli.py
+          [ -f "dist/$appName" ]
 
       - name: Build macOS (GUI)
         env:
@@ -359,10 +376,17 @@ jobs:
         run: |
           set -e
           version="${VERSION:-0.0.0}"
-          exeName="IoCScanner_GUI_macOS_v${version}"
-          echo "MAC_GUI_BIN=${exeName}" >> $GITHUB_ENV
-          pyinstaller --noconfirm --clean --noupx --onefile --windowed --name "$exeName" entry_gui.py
-          [ -f "dist/$exeName" ]
+          appName="IoCScanner_GUI_macOS_v${version}"
+          echo "MAC_GUI_BIN=${appName}" >> $GITHUB_ENV
+          ARGS=( --noconfirm --clean --noupx --windowed --name "$appName"
+                 --collect-all tkinterdnd2
+                 --hidden-import tkinterdnd2 )
+          # Icône ICNS dans assets (optionnelle)
+          if [ -f "scanner/assets/icon.icns" ]; then
+            ARGS+=( --icon scanner/assets/icon.icns )
+          fi
+          pyinstaller "${ARGS[@]}" entry_gui.py
+          [ -f "dist/$appName" ]
 
       - name: Zip macOS binaries
         run: |
@@ -407,9 +431,10 @@ jobs:
           name: IoC-Scanner v${{ needs.build.outputs.version }}
           body: |
             Windows, Linux & macOS standalone builds.
-            - Windows: onefile (CLI/GUI) avec manifest & version info + icône forcée
-            - Linux: onefile (CLI/GUI)
-            - macOS: onefile (CLI/GUI)
+            - Windows: --icon scanner\assets\icon.ico (pas de rcedit)
+            - Linux:   --icon scanner/assets/icon.png
+            - macOS:   --icon scanner/assets/icon.icns
+            Manifest & Version info inclus, UPX désactivé.
           files: |
             dist/**/*
         env:
