@@ -1,121 +1,105 @@
-name: CI & Release — IoC Scanner
+name: Build and Release (Windows + Linux + macOS Standalone)
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 permissions:
   contents: write
 
 jobs:
-  prepare:
+  build:
     runs-on: ubuntu-latest
     outputs:
       should_release: ${{ steps.compare.outputs.greater }}
-      version: ${{ steps.read.outputs.version }}
+      version: ${{ steps.read_version.outputs.version }}
       tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
       - name: Install jq
         run: |
           sudo apt-get update
           sudo apt-get install -y jq
 
-      - name: Read version.txt
-        id: read
-        run: |
-          set -e
-          [ -f version.txt ] || { echo "version.txt manquant"; exit 1; }
-          RAW=$(head -n1 version.txt | tr -d '\r' | xargs)
-          VER=$(printf "%s" "$RAW" | sed -E 's/^[^0-9]*//')
-          [ -n "$VER" ] || { echo "version.txt vide"; exit 1; }
-          echo "version=$VER" >> $GITHUB_OUTPUT
-
+      # Dernière release → version numérique (retire préfixe type "v")
       - name: Get latest release tag
         id: latest
-        env:
-          TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          LATEST=$(curl -s -H "Authorization: token ${TOKEN}" \
-            https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r '.tag_name // empty')
-          [ -n "$LATEST" ] || LATEST="0.0.0"
-          CLEAN=$(printf "%s" "$LATEST" | sed -E 's/^[^0-9]*//')
-          echo "latest=$CLEAN" >> $GITHUB_OUTPUT
+          TOKEN="${{ secrets.TOKEN }}"
+          if [ -z "$TOKEN" ]; then TOKEN="${{ secrets.GITHUB_TOKEN }}"; fi
 
+          LATEST_TAG=$(curl -s -H "Authorization: token ${TOKEN}" \
+            https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r '.tag_name // empty')
+
+          if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then LATEST_TAG="0.0.0"; fi
+          LATEST_VERSION=$(printf "%s" "$LATEST_TAG" | sed -E 's/^[^0-9]*//')
+
+          echo "LATEST_TAG=$LATEST_TAG"           >> $GITHUB_ENV
+          echo "LATEST_VERSION=$LATEST_VERSION"   >> $GITHUB_ENV
+          echo "LATEST_VERSION=$LATEST_VERSION"
+
+      # Lit version.txt (ligne 1) et nettoie
+      - name: Read version.txt
+        id: read_version
+        run: |
+          set -e
+          [ -f version.txt ] || { echo "version.txt introuvable à la racine"; exit 1; }
+          RAW_VERSION=$(head -n1 version.txt | tr -d '\r' | xargs)
+          [ -n "$RAW_VERSION" ] || { echo "version.txt est vide"; exit 1; }
+          VERSION=$(printf "%s" "$RAW_VERSION" | sed -E 's/^[^0-9]*//')
+
+          echo "VERSION=$VERSION"         >> $GITHUB_ENV
+          echo "version=$VERSION"         >> $GITHUB_OUTPUT
+          echo "VERSION=$VERSION"
+
+      # Compare version fichier vs dernière release
       - name: Compare versions
         id: compare
         run: |
-          echo "NEW=${{ steps.read.outputs.version }} ; LATEST=${{ steps.latest.outputs.latest }}"
-          if dpkg --compare-versions "${{ steps.read.outputs.version }}" gt "${{ steps.latest.outputs.latest }}"; then
-            echo "greater=true" >> $GITHUB_OUTPUT
+          echo "Comparaison: NEW=${{ env.VERSION }} ; LATEST=${{ env.LATEST_VERSION }}"
+          if dpkg --compare-versions "${{ env.VERSION }}" gt "${{ env.LATEST_VERSION }}"; then
+            echo "greater=true"  >> $GITHUB_OUTPUT
+            echo "GREATER=true"  >> $GITHUB_ENV
+            echo "Nouvelle version détectée"
           else
             echo "greater=false" >> $GITHUB_OUTPUT
+            echo "GREATER=false" >> $GITHUB_ENV
+            echo "Pas de bump de version"
           fi
 
+      # Tag à créer/mettre à jour (softprops créera le tag s'il n'existe pas)
       - name: Compute tag
         id: tag
         run: |
-          echo "tag=v${{ steps.read.outputs.version }}" >> $GITHUB_OUTPUT
+          echo "tag=v${{ env.VERSION }}" >> $GITHUB_OUTPUT
 
-  tests:
-    name: tests (python 3.13)
-    runs-on: ubuntu-latest
-    needs: prepare
+  Windows_Standalone_Build:
+    if: ${{ needs.build.outputs.should_release == 'true' }}
+    runs-on: windows-latest
+    needs: [ build ]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Install test deps
-        run: |
-          python -m pip install --upgrade pip pytest
-          [ -f requirements.txt ] && python -m pip install -r requirements.txt || true
-      - name: Run pytest
-        run: |
-          python -m pytest -q || echo "No tests"
+          cache: 'pip'
 
-  build_pkg:
-    name: build sdist+wheel
-    runs-on: ubuntu-latest
-    needs: [prepare, tests]
-    if: needs.prepare.outputs.should_release == 'true'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Build package (PEP 517)
-        run: |
-          python -m pip install --upgrade pip build
-          if [ -f pyproject.toml ] || [ -f setup.cfg ] || [ -f setup.py ]; then
-            python -m build
-          else
-            mkdir -p dist && echo "no-package" > dist/NO_PYPROJECT
-          fi
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/*
-
-  build_binaries_windows:
-    name: build binaries (Windows)
-    runs-on: windows-latest
-    needs: [prepare, tests]
-    if: needs.prepare.outputs.should_release == 'true'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install PyInstaller
+      - name: Install deps (PyInstaller + project)
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pyinstaller
+          if (Test-Path "requirements.txt") {
+            python -m pip install -r requirements.txt
+          }
+          python -m pip install "pyinstaller>=6.0"
+          pyinstaller --version
 
       - name: Create entrypoints (CLI & GUI)
         shell: pwsh
@@ -131,38 +115,58 @@ jobs:
               launch_gui()
           "@
 
-      - name: Build (CLI console)
+      - name: Build Windows Standalone (CLI)
         shell: pwsh
-        run: pyinstaller --noconfirm --onefile --console  --name IoCScanner-CLI entry_cli.py
+        run: |
+          $version = "${{ needs.build.outputs.version }}"
+          if ([string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
+          $exeName = "IoCScanner_CLI_Windows_v$version"
+          "WINDOWS_CLI_EXE=$exeName.exe" >> $env:GITHUB_ENV
+          pyinstaller --noconfirm --onefile --console --name $exeName entry_cli.py
+          if (!(Test-Path "dist\$exeName.exe")) { Write-Error "EXE CLI manquant"; exit 1 }
 
-      - name: Build (GUI windowed)
+      - name: Build Windows Standalone (GUI)
         shell: pwsh
-        run: pyinstaller --noconfirm --onefile --windowed --name IoCScanner-GUI entry_gui.py
+        run: |
+          $version = "${{ needs.build.outputs.version }}"
+          if ([string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
+          $exeName = "IoCScanner_GUI_Windows_v$version"
+          "WINDOWS_GUI_EXE=$exeName.exe" >> $env:GITHUB_ENV
+          pyinstaller --noconfirm --onefile --windowed --name $exeName entry_gui.py
+          if (!(Test-Path "dist\$exeName.exe")) { Write-Error "EXE GUI manquant"; exit 1 }
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: windows-binaries
+          name: windows-bin
           path: |
-            dist/IoCScanner-CLI.exe
-            dist/IoCScanner-GUI.exe
+            dist/${{ env.WINDOWS_CLI_EXE }}
+            dist/${{ env.WINDOWS_GUI_EXE }}
+          if-no-files-found: error
+          retention-days: 7
 
-
-  build_binaries_linux:
-    name: build binaries (Linux)
+  Linux_Standalone_Build:
+    if: ${{ needs.build.outputs.should_release == 'true' }}
     runs-on: ubuntu-latest
-    needs: [prepare, tests]
-    if: needs.prepare.outputs.should_release == 'true'
+    needs: [ build ]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - name: Install system deps (Tk) & PyInstaller
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install system deps (Tk) + PyInstaller
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-tk tk
-          python -m pip install --upgrade pip pyinstaller
+          python -m pip install --upgrade pip
+          [ -f requirements.txt ] && python -m pip install -r requirements.txt || true
+          python -m pip install "pyinstaller>=6.0"
+          pyinstaller --version
 
       - name: Create entrypoints (CLI & GUI)
         run: |
@@ -177,35 +181,61 @@ jobs:
               launch_gui()
           PY
 
-      - name: Build (CLI console)
-        run: pyinstaller --noconfirm --onefile --console  --name IoCScanner-CLI entry_cli.py
+      - name: Build Linux Standalone (CLI)
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -e
+          version="${VERSION:-0.0.0}"
+          exeName="IoCScanner_CLI_Linux_v${version}"
+          echo "LINUX_CLI_BIN=${exeName}" >> $GITHUB_ENV
+          pyinstaller --noconfirm --onefile --console --name "$exeName" entry_cli.py
+          [ -f "dist/$exeName" ]
 
-      - name: Build (GUI windowed)
-        run: pyinstaller --noconfirm --onefile --windowed --name IoCScanner-GUI entry_gui.py
+      - name: Build Linux Standalone (GUI)
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -e
+          version="${VERSION:-0.0.0}"
+          exeName="IoCScanner_GUI_Linux_v${version}"
+          echo "LINUX_GUI_BIN=${exeName}" >> $GITHUB_ENV
+          pyinstaller --noconfirm --onefile --windowed --name "$exeName" entry_gui.py
+          [ -f "dist/$exeName" ]
 
-      - name: Tarball Linux binaries
-        run: tar -C dist -czf dist/IoCScanner-linux.tar.gz IoCScanner-CLI IoCScanner-GUI
+      - name: Archive Linux binaries
+        run: |
+          tar -C dist -czf dist/IoCScanner_Linux_binaries.tar.gz \
+            "${LINUX_CLI_BIN}" "${LINUX_GUI_BIN}"
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: linux-binaries
-          path: dist/IoCScanner-linux.tar.gz
+          name: linux-bin
+          path: dist/IoCScanner_Linux_binaries.tar.gz
+          if-no-files-found: error
+          retention-days: 7
 
-
-  build_binaries_macos:
-    name: build binaries (macOS)
+  macOS_Standalone_Build:
+    if: ${{ needs.build.outputs.should_release == 'true' }}
     runs-on: macos-latest
-    needs: [prepare, tests]
-    if: needs.prepare.outputs.should_release == 'true'
+    needs: [ build ]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - name: Install PyInstaller
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install Python deps (+ PyInstaller)
         run: |
-          python -m pip install --upgrade pip pyinstaller
+          python -m pip install --upgrade pip
+          [ -f requirements.txt ] && python -m pip install -r requirements.txt || true
+          python -m pip install "pyinstaller>=6.0"
+          pyinstaller --version
 
       - name: Create entrypoints (CLI & GUI)
         run: |
@@ -220,43 +250,71 @@ jobs:
               launch_gui()
           PY
 
-      - name: Build (CLI console)
-        run: pyinstaller --noconfirm --onefile --console  --name IoCScanner-CLI entry_cli.py
+      - name: Build macOS (CLI)
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -e
+          version="${VERSION:-0.0.0}"
+          exeName="IoCScanner_CLI_macOS_v${version}"
+          echo "MAC_CLI_BIN=${exeName}" >> $GITHUB_ENV
+          pyinstaller --noconfirm --onefile --console --name "$exeName" entry_cli.py
+          [ -f "dist/$exeName" ]
 
-      - name: Build (GUI windowed)
-        run: pyinstaller --noconfirm --onefile --windowed --name IoCScanner-GUI entry_gui.py
+      - name: Build macOS (GUI)
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -e
+          version="${VERSION:-0.0.0}"
+          exeName="IoCScanner_GUI_macOS_v${version}"
+          echo "MAC_GUI_BIN=${exeName}" >> $GITHUB_ENV
+          pyinstaller --noconfirm --onefile --windowed --name "$exeName" entry_gui.py
+          [ -f "dist/$exeName" ]
 
       - name: Zip macOS binaries
         run: |
-          cd dist && zip -r IoCScanner-macos.zip IoCScanner-CLI IoCScanner-GUI
+          cd dist && /usr/bin/zip -r IoCScanner_macOS_binaries.zip \
+            "${MAC_CLI_BIN}" "${MAC_GUI_BIN}"
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: macos-binaries
-          path: dist/IoCScanner-macos.zip
-
+          name: macos-app
+          path: dist/IoCScanner_macOS_binaries.zip
+          if-no-files-found: error
+          retention-days: 7
 
   release:
-    name: GitHub Release
+    if: ${{ needs.build.outputs.should_release == 'true' }}
     runs-on: ubuntu-latest
-    needs: [prepare, build_pkg, build_binaries_windows, build_binaries_linux, build_binaries_macos]
-    if: needs.prepare.outputs.should_release == 'true'
+    needs: [ build, Windows_Standalone_Build, Linux_Standalone_Build, macOS_Standalone_Build ]
     steps:
-      - uses: actions/download-artifact@v4
-        with: { name: dist, path: dist/ }
-      - uses: actions/download-artifact@v4
-        with: { name: windows-binaries, path: dist/ }
-      - uses: actions/download-artifact@v4
-        with: { name: linux-binaries, path: dist/ }
-      - uses: actions/download-artifact@v4
-        with: { name: macos-binaries, path: dist/ }
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-bin
+          path: dist/
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-bin
+          path: dist/
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-app
+          path: dist/
+
       - name: Create/Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.prepare.outputs.tag }}
-          name: IoC Scanner v${{ needs.prepare.outputs.version }}
-          generate_release_notes: true
-          files: dist/**
+          tag_name: ${{ needs.build.outputs.tag }}
+          name: IoC-Scanner v${{ needs.build.outputs.version }}
+          body: Windows, Linux & macOS standalone builds
+          files: |
+            dist/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
-
