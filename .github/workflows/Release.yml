@@ -135,7 +135,6 @@ jobs:
             "--noconfirm","--onefile","--clean","--noupx",
             "--windowed",
             "--name",$exeName,
-            "--icon","scanner\assets\icon.ico",
             "--add-data","scanner\assets\icon.ico;assets",
             "--add-data","scanner\assets\icon.png;assets",
             "--version-file","build-res\file_version.txt",
