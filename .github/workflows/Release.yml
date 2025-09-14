@@ -123,7 +123,7 @@ jobs:
 
           $ver = "${{ needs.build.outputs.version }}"; if ([string]::IsNullOrWhiteSpace($ver)) { $ver = "0.0.0" }
 
-          # VSVersionInfo pour --version-file (placeholders remplacés ensuite)
+          # VSVersionInfo (placeholders remplacés ensuite)
           Set-Content build-res\file_version.txt @'
           # UTF-8
           VSVersionInfo(
@@ -148,7 +148,7 @@ jobs:
             Replace('{{VER}}', ($ver -replace '\.', ', ')).
             Replace('{{VERSTR}}', $ver) | Set-Content build-res\file_version.txt
 
-          # Manifest XML valide (asInvoker + compat + Common-Controls v6)
+          # Manifest XML valide
           Set-Content build-res\app.manifest @'
           <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
           <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
@@ -244,11 +244,13 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
       - name: Setup Python 3.13
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
           cache: 'pip'
+
       - name: Install system deps (Tk) + PyInstaller
         run: |
           sudo apt-get update
@@ -257,6 +259,7 @@ jobs:
           [ -f requirements.txt ] && python -m pip install -r requirements.txt || true
           python -m pip install "pyinstaller>=6.0"
           pyinstaller --version
+
       - name: Create entrypoints (CLI & GUI)
         run: |
           cat > entry_cli.py << 'PY'
@@ -269,8 +272,10 @@ jobs:
           if __name__ == "__main__":
               launch_gui()
           PY
+
       - name: Build Linux Standalone (CLI)
-        env: { VERSION: ${{ needs.build.outputs.version }} }
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -e
           version="${VERSION:-0.0.0}"
@@ -278,8 +283,10 @@ jobs:
           echo "LINUX_CLI_BIN=${exeName}" >> $GITHUB_ENV
           pyinstaller --noconfirm --clean --noupx --onefile --console --name "$exeName" entry_cli.py
           [ -f "dist/$exeName" ]
+
       - name: Build Linux Standalone (GUI)
-        env: { VERSION: ${{ needs.build.outputs.version }} }
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -e
           version="${VERSION:-0.0.0}"
@@ -287,10 +294,12 @@ jobs:
           echo "LINUX_GUI_BIN=${exeName}" >> $GITHUB_ENV
           pyinstaller --noconfirm --clean --noupx --onefile --windowed --name "$exeName" entry_gui.py
           [ -f "dist/$exeName" ]
+
       - name: Archive Linux binaries
         run: |
           tar -C dist -czf dist/IoCScanner_Linux_binaries.tar.gz \
             "${LINUX_CLI_BIN}" "${LINUX_GUI_BIN}"
+
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
@@ -306,17 +315,20 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
       - name: Setup Python 3.13
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
           cache: 'pip'
+
       - name: Install Python deps (+ PyInstaller)
         run: |
           python -m pip install --upgrade pip
           [ -f requirements.txt ] && python -m pip install -r requirements.txt || true
           python -m pip install "pyinstaller>=6.0"
           pyinstaller --version
+
       - name: Create entrypoints (CLI & GUI)
         run: |
           cat > entry_cli.py << 'PY'
@@ -329,8 +341,10 @@ jobs:
           if __name__ == "__main__":
               launch_gui()
           PY
+
       - name: Build macOS (CLI)
-        env: { VERSION: ${{ needs.build.outputs.version }} }
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -e
           version="${VERSION:-0.0.0}"
@@ -338,8 +352,10 @@ jobs:
           echo "MAC_CLI_BIN=${exeName}" >> $GITHUB_ENV
           pyinstaller --noconfirm --clean --noupx --onefile --console --name "$exeName" entry_cli.py
           [ -f "dist/$exeName" ]
+
       - name: Build macOS (GUI)
-        env: { VERSION: ${{ needs.build.outputs.version }} }
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -e
           version="${VERSION:-0.0.0}"
@@ -347,10 +363,12 @@ jobs:
           echo "MAC_GUI_BIN=${exeName}" >> $GITHUB_ENV
           pyinstaller --noconfirm --clean --noupx --onefile --windowed --name "$exeName" entry_gui.py
           [ -f "dist/$exeName" ]
+
       - name: Zip macOS binaries
         run: |
           cd dist && /usr/bin/zip -r IoCScanner_macOS_binaries.zip \
             "${MAC_CLI_BIN}" "${MAC_GUI_BIN}"
+
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
@@ -366,13 +384,22 @@ jobs:
     steps:
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
-        with: { name: windows-bin, path: dist/ }
+        with:
+          name: windows-bin
+          path: dist/
+
       - name: Download Linux artifact
         uses: actions/download-artifact@v4
-        with: { name: linux-bin, path: dist/ }
+        with:
+          name: linux-bin
+          path: dist/
+
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
-        with: { name: macos-app, path: dist/ }
+        with:
+          name: macos-app
+          path: dist/
+
       - name: Create/Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -383,6 +410,7 @@ jobs:
             - Windows: onefile (CLI/GUI) avec manifest & version info + icône forcée
             - Linux: onefile (CLI/GUI)
             - macOS: onefile (CLI/GUI)
-          files: dist/**/*
+          files: |
+            dist/**/*
         env:
           GITHUB_TOKEN: ${{ github.token }}
