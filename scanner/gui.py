@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import os, platform, subprocess, threading
+import os, platform, subprocess, threading, sys
 
 from datetime import datetime
 from pathlib import Path
@@ -106,6 +106,7 @@ class ToolTip:
 def system_can_use_gui() -> bool:
     if not TK_AVAILABLE:
         return False
+    # WSL : on évite par défaut, sauf si display configuré
     if os.environ.get("WSLENV") or os.environ.get("WSL_DISTRO_NAME"):
         return False
     if IS_LIN:
@@ -116,6 +117,17 @@ def system_can_use_gui() -> bool:
 # Lancement GUI
 # --------------------------------------------------------------------
 
+def _resource_path(*parts: str) -> str:
+    """
+    Retourne un chemin absolu vers une ressource packagée.
+    - En binaire PyInstaller onefile : utilise sys._MEIPASS.
+    - En dev : relatif au répertoire de ce fichier (scanner/).
+    """
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        return str(Path(base).joinpath(*parts))
+    return str(Path(__file__).resolve().parent.joinpath(*parts))
+
 def launch_gui() -> None:
     if not TK_AVAILABLE:
         print("Tkinter n'est pas disponible. Lance le script sans --gui.")
@@ -125,31 +137,33 @@ def launch_gui() -> None:
     app.title(f"{get_app_name()}")
     app.minsize(1080, 720)
 
-    # --- Icône fenêtre (Windows: .ico | Linux: .png) ---
-    try:
-        assets_dir = Path(__file__).parent / "assets"
-        ico_path = assets_dir / "IoC-Scanner.ico"    # ton .ico généré
-        png_path = assets_dir / "icon.png"           # fallback (Linux/Wayland)
+    # --- Icône fenêtre (Windows: .ico | Linux/macOS: .png) ---
+    # Chemins packagés (via --add-data ...;assets / :assets) ET chemins locaux (dev)
+    ico_packed = Path(_resource_path("assets", "icon.ico"))
+    png_packed = Path(_resource_path("assets", "icon.png"))
+    ico_local  = Path(__file__).resolve().parent / "assets" / "icon.ico"
+    png_local  = Path(__file__).resolve().parent / "assets" / "icon.png"
 
-        # Aide pour PyInstaller/zipapp
-        def _res(p: Path) -> str:
-            return str(p if p.exists() else Path(os.getcwd()) / p.name)
+    ico = ico_packed if ico_packed.exists() else ico_local
+    png = png_packed if png_packed.exists() else png_local
 
-        if os.name == "nt" and ico_path.exists():
-            # Windows → .ico obligatoire pour la barre de titre
-            app.iconbitmap(_res(ico_path))
-        elif png_path.exists():
-            # Linux/Unix → PNG via iconphoto
-            _icon_img = tk.PhotoImage(file=_res(png_path))
-            app.iconphoto(True, _icon_img)
-            app._icon_img = _icon_img   # empêcher le GC
-        elif ico_path.exists():
-            # Fallback: certains WM acceptent le .ico via iconphoto si converti
-            # (optionnel: laisser Windows gérer avec iconbitmap déjà ci-dessus)
+    # Windows → priorité à .ico (barre de titre)
+    if IS_WIN and ico.exists():
+        try:
+            app.iconbitmap(str(ico))
+        except tk.TclError:
+            # On tentera un fallback PNG plus bas
             pass
-    except Exception as exc_icon:
-        print(f"[!] Impossible de définir l’icône: {exc_icon}")
 
+    # Tous OS → tenter PNG via iconphoto (fonctionne aussi sous Windows)
+    if png.exists():
+        try:
+            _icon_img = tk.PhotoImage(file=str(png))
+            app.iconphoto(True, _icon_img)
+            app._icon_img = _icon_img  # éviter le GC
+        except tk.TclError:
+            # Icône non bloquante : on ignore proprement
+            pass
 
     # --- Vars (défauts intelligents) ---
     root_var = tk.StringVar(value=get_default_root())
@@ -188,7 +202,7 @@ def launch_gui() -> None:
     cron_system_var = tk.BooleanVar(value=IS_LIN)
     systemd_system_var = tk.BooleanVar(value=IS_LIN)
     ld_preload_var = tk.BooleanVar(value=IS_LIN)
-    suid_var = tk.BooleanVar(value=False)
+    suid_var = tk.BooleanVar(value=IS_LIN)
     path_ww_var = tk.BooleanVar(value=IS_LIN)
 
     save_csv_var = tk.BooleanVar(value=True)

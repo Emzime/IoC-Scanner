@@ -137,8 +137,13 @@ jobs:
             "--version-file","build-res\file_version.txt",
             "--manifest","build-res\app.manifest"
           )
+          
           if (Test-Path "scanner\assets\icon.ico") {
-            $args += @("--icon","scanner\assets\icon.ico")
+            $args += @(
+              "--icon","scanner\assets\icon.ico",
+              "--add-data","scanner\assets\icon.ico;assets",
+              "--add-data","scanner\assets\icon.png;assets"
+            )
           }
 
           & pyinstaller @args $entryPath
@@ -198,7 +203,7 @@ jobs:
           echo "LINUX_GUI_BIN=${exeName}" >> $GITHUB_ENV
           ARGS=( --noconfirm --clean --noupx --onefile --windowed --name "$exeName" )
           if [ -f "scanner/assets/icon.png" ]; then
-            ARGS+=( --icon scanner/assets/icon.png )
+            ARGS+=( --icon scanner/assets/icon.png --add-data "scanner/assets/icon.png:assets" )
           fi
           pyinstaller "${ARGS[@]}" entry_gui.py
           [ -f "dist/$exeName" ]
@@ -269,6 +274,7 @@ jobs:
           echo "MAC_GUI_BIN=${exeName}" >> $GITHUB_ENV
           ARGS=( --noconfirm --clean --noupx --onefile --windowed --name "$exeName" )
           ARGS+=( --icon scanner/assets/icon.icns )
+          ARGS+=( --add-data "scanner/assets/icon.png:assets" )
           pyinstaller "${ARGS[@]}" entry_gui.py
           [ -f "dist/$exeName" ]
 
