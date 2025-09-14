@@ -1,2 +1,11 @@
 /.venv/
 /.idea/
+
+# Fichiers Python à ignorer
+/scanner/__pycache__
+/scanner/core/__pycache__
+/scanner/refs/__pycache__
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd

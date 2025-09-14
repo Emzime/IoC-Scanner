@@ -75,10 +75,8 @@ class ToolTip:
         try:
             tip.wm_geometry(f"+{x}+{y}")
         except tk.TclError:
-            # si le WM refuse la géométrie, on garde la position par défaut
             pass
 
-        # justify / relief : littéraux autorisés par les stubs Tkinter
         lbl = tk.Label(
             tip,
             text=self.text,
@@ -108,7 +106,6 @@ class ToolTip:
 def system_can_use_gui() -> bool:
     if not TK_AVAILABLE:
         return False
-    # WSL : on évite par défaut, sauf si display configuré
     if os.environ.get("WSLENV") or os.environ.get("WSL_DISTRO_NAME"):
         return False
     if IS_LIN:
@@ -125,8 +122,34 @@ def launch_gui() -> None:
         return
 
     app = tk.Tk()
-    app.title(f"{get_app_name()} — GUI")
+    app.title(f"{get_app_name()}")
     app.minsize(1080, 720)
+
+    # --- Icône fenêtre (Windows: .ico | Linux: .png) ---
+    try:
+        assets_dir = Path(__file__).parent / "assets"
+        ico_path = assets_dir / "IoC-Scanner.ico"    # ton .ico généré
+        png_path = assets_dir / "icon.png"           # fallback (Linux/Wayland)
+
+        # Aide pour PyInstaller/zipapp
+        def _res(p: Path) -> str:
+            return str(p if p.exists() else Path(os.getcwd()) / p.name)
+
+        if os.name == "nt" and ico_path.exists():
+            # Windows → .ico obligatoire pour la barre de titre
+            app.iconbitmap(_res(ico_path))
+        elif png_path.exists():
+            # Linux/Unix → PNG via iconphoto
+            _icon_img = tk.PhotoImage(file=_res(png_path))
+            app.iconphoto(True, _icon_img)
+            app._icon_img = _icon_img   # empêcher le GC
+        elif ico_path.exists():
+            # Fallback: certains WM acceptent le .ico via iconphoto si converti
+            # (optionnel: laisser Windows gérer avec iconbitmap déjà ci-dessus)
+            pass
+    except Exception as exc_icon:
+        print(f"[!] Impossible de définir l’icône: {exc_icon}")
+
 
     # --- Vars (défauts intelligents) ---
     root_var = tk.StringVar(value=get_default_root())
@@ -491,8 +514,9 @@ def launch_gui() -> None:
             try:
                 _, stats = run_scan_core(root_path, exclude_names, ns, log_fn=post, cancel=cancel_event)
                 q.put(("__DONE__", stats))
-            except (OSError, PermissionError, FileNotFoundError, RuntimeError, ValueError, subprocess.SubprocessError) as e:
-                q.put(f"[!] Erreur: {e!r}")
+            except (OSError, PermissionError, FileNotFoundError, RuntimeError, ValueError,
+                    subprocess.SubprocessError) as exc:
+                q.put(f"[!] Erreur: {exc!r}")
 
         cancel_event = threading.Event()
         _set_running(True)
