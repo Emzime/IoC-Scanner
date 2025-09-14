@@ -10,29 +10,75 @@ from scanner.utils import fetch_json, SIGNATURE_BASE_URL, CACHE_DIR
 # ---------------------------------------------------------------------------
 
 DEFAULT_BAD_PACKAGES: Dict[str, List[str]] = {
-    "debug": ["4.4.2"],
-    "color-name": ["2.0.1"],
-    "strip-ansi": ["7.1.1"],
-    "color": ["5.0.1"],
-    "color-convert": ["3.1.1"],
-    "color-string": ["2.1.1"],
-    "has-ansi": ["6.0.1"],
-    "ansi-styles": ["6.2.2"],
-    "ansi-regex": ["6.2.1"],
-    "supports-color": ["10.2.1"],
-    "chalk": ["5.6.1"],
-    "backslash": ["0.2.1"],
-    "wrap-ansi": ["9.0.1"],
-    "is-arrayish": ["0.3.3"],
-    "error-ex": ["1.3.3"],
-    "slice-ansi": ["7.1.1"],
-    "simple-swizzle": ["0.2.3"],
-    "chalk-template": ["1.1.1"],
-    "supports-hyperlinks": ["4.1.1"],
-    "duckdb": ["1.3.3"],
-    "@duckdb/node-api": ["1.3.3"],
-    "@duckdb/node-bindings": ["1.3.3"],
-    "@duckdb/duckdb-wasm": ["1.29.2"],
+    "@duckdb/duckdb-wasm": [
+        "1.29.2"
+    ],
+    "@duckdb/node-api": [
+        "1.3.3"
+    ],
+    "@duckdb/node-bindings": [
+        "1.3.3"
+    ],
+    "ansi-regex": [
+        "6.2.1"
+    ],
+    "ansi-styles": [
+        "6.2.2"
+    ],
+    "backslash": [
+        "0.2.1"
+    ],
+    "chalk": [
+        "5.6.1"
+    ],
+    "chalk-template": [
+        "1.1.1"
+    ],
+    "color": [
+        "5.0.1"
+    ],
+    "color-convert": [
+        "3.1.1"
+    ],
+    "color-name": [
+        "2.0.1"
+    ],
+    "color-string": [
+        "2.1.1"
+    ],
+    "debug": [
+        "4.4.2"
+    ],
+    "duckdb": [
+        "1.3.3"
+    ],
+    "error-ex": [
+        "1.3.3"
+    ],
+    "has-ansi": [
+        "6.0.1"
+    ],
+    "is-arrayish": [
+        "0.3.3"
+    ],
+    "simple-swizzle": [
+        "0.2.3"
+    ],
+    "slice-ansi": [
+        "7.1.1"
+    ],
+    "strip-ansi": [
+        "7.1.1"
+    ],
+    "supports-color": [
+        "10.2.1"
+    ],
+    "supports-hyperlinks": [
+        "4.1.1"
+    ],
+    "wrap-ansi": [
+        "9.0.1"
+    ]
 }
 
 DEFAULT_EXTRA_TARGETS: List[str] = [
@@ -55,7 +101,7 @@ DEFAULT_EXTRA_TARGETS: List[str] = [
     "duckdb",
     "@duckdb/node-api",
     "@duckdb/node-bindings",
-    "@duckdb/duckdb-wasm",
+    "@duckdb/duckdb-wasm"
 ]
 
 # ---------------------------------------------------------------------------
