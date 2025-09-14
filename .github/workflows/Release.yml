@@ -198,20 +198,19 @@ jobs:
           $exeName   = "IoCScanner_GUI_Windows_v$version"
           "WINDOWS_GUI_EXE=$exeName.exe" >> $env:GITHUB_ENV
           $entryPath = (Resolve-Path "entry_gui.py").Path
-  
+          
           $args = @(
             "--noconfirm","--onefile","--clean","--noupx",
             "--windowed",
-            "--runtime-tmpdir",".\_ioc_rt",    # ← évite %TEMP%
+            "--runtime-tmpdir",".\_ioc_rt",
             "--name",$exeName,
             "--version-file","build-res\file_version.txt",
-            "--manifest","build-res\app.manifest",
-            "--hidden-import","tkinterdnd2"
+            "--manifest","build-res\app.manifest"
           )
           if (Test-Path "scanner\assets\icon.ico") {
-            $args += @("--icon","scanner\assets\icon.ico")   # pas de --add-data
+            $args += @("--icon","scanner\assets\icon.ico")  # pas de --add-data
           }
-  
+          
           & pyinstaller @args $entryPath
           if (!(Test-Path "dist\$exeName.exe")) {
             Write-Error "EXE GUI manquant"; exit 1
