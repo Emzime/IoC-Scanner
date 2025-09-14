@@ -5,37 +5,44 @@
 # Tous les fichiers texte par défaut en LF
 * text=auto eol=lf
 
-# Fichiers Python : toujours LF
-*.py text eol=lf
+# Fichiers Python
+*.py    text eol=lf
 
-# Fichiers de config / doc : toujours LF
-*.yml text eol=lf
-*.yaml text eol=lf
-*.json text eol=lf
-*.md text eol=lf
-*.toml text eol=lf
-*.cfg text eol=lf
+# Config / doc
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.toml  text eol=lf
+*.cfg   text eol=lf
+*.ini   text eol=lf
+*.env   text eol=lf
+*.csv   text eol=lf
+*.tsv   text eol=lf
+*.svg   text eol=lf
 
-# Scripts Bash / Shell : LF obligatoire
-*.sh text eol=lf
-
-# Scripts Windows : CRLF obligatoire
-*.bat text eol=crlf
-*.cmd text eol=crlf
-*.ps1 text eol=crlf
+# Scripts
+*.sh    text eol=lf
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+# (optionnel selon ton usage)
+*.psm1  text eol=crlf
+*.psd1  text eol=crlf
 
 # ===========================================
 # Fichiers binaires (jamais normalisés)
 # ===========================================
-*.png binary
-*.jpg binary
-*.jpeg binary
-*.gif binary
-*.ico binary
-*.pdf binary
-*.exe binary
-*.dll binary
-*.zip binary
-*.tar binary
-*.gz binary
-*.7z binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.icns  binary
+*.pdf   binary
+*.exe   binary
+*.dll   binary
+*.zip   binary
+*.tar   binary
+*.gz    binary
+*.7z    binary
