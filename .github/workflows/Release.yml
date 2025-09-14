@@ -1,252 +1,198 @@
-name: CI & Release — IoC-Scanner
+name: CI & Release — IoC Scanner
 
 on:
   push:
-    branches: [ main ]
-    tags:
-      - "v*.*.*"
-  pull_request:
-    branches: [ "**" ]
+    branches: [ main ]         # ← on déclenche à chaque push sur main
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  tests:
-    name: tests (python ${{ matrix.python-version }})
+  prepare:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.13"]
+    outputs:
+      should_release: ${{ steps.compare.outputs.greater }}
+      version: ${{ steps.read.outputs.version }}
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install test deps
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pytest
-          # Installe le projet si un pyproject / setup.cfg est présent (facultatif)
-          if [ -f pyproject.toml ] || [ -f setup.cfg ] || [ -f setup.py ]; then
-            python -m pip install -e .
-          fi
-
-      - name: Run pytest
-        run: |
-          # Ne fait pas échouer si aucun test
-          python -m pytest -q || echo "Aucun test — étape non bloquante."
-
-  build-pkg:
-    name: build sdist+wheel
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    needs: tests
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Build package (PEP 517)
-        run: |
-          python -m pip install --upgrade pip build
-          if [ -f pyproject.toml ] || [ -f setup.cfg ] || [ -f setup.py ]; then
-            python -m build
-          else
-            mkdir -p dist && echo "package-missing" > dist/NO_PYPROJECT
-          fi
-
-      - name: Upload dist artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/*
-
-  build-binaries-windows:
-    name: build binaries (Windows)
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: windows-latest
-    needs: tests
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Install PyInstaller
-        shell: pwsh
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pyinstaller
-
-      - name: Create entry wrappers (no if-main)
-        shell: pwsh
-        run: |
-          Remove-Item -Force -ErrorAction Ignore entry_cli.py, entry_gui.py
-          Add-Content entry_cli.py 'from scanner.cli import main'
-          Add-Content entry_cli.py 'main()'
-          Add-Content entry_gui.py 'from scanner.gui import launch_gui'
-          Add-Content entry_gui.py 'launch_gui()'
-
-      - name: Build (CLI console)
-        shell: pwsh
-        run: |
-          pyinstaller --noconfirm --onefile --console --name IoCScanner-CLI entry_cli.py
-
-      - name: Build (GUI windowed)
-        shell: pwsh
-        run: |
-          pyinstaller --noconfirm --onefile --windowed --name IoCScanner-GUI entry_gui.py
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-binaries
-          path: |
-            dist/IoCScanner-CLI.exe
-            dist/IoCScanner-GUI.exe
-
-  build-binaries-linux:
-    name: build binaries (Linux)
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    needs: tests
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Install system deps (Tk for GUI)
+      - name: Install jq
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-tk tk
+          sudo apt-get install -y jq
 
-      - name: Install PyInstaller
+      - name: Read version.txt
+        id: read
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install pyinstaller
+          set -e
+          [ -f version.txt ] || { echo "version.txt manquant"; exit 1; }
+          RAW=$(head -n1 version.txt | tr -d '\r' | xargs)
+          VER=$(printf "%s" "$RAW" | sed -E 's/^[^0-9]*//')
+          [ -n "$VER" ] || { echo "version.txt vide"; exit 1; }
+          echo "version=$VER" >> $GITHUB_OUTPUT
 
-      - name: Create entry wrappers (no if-main)
+      - name: Get latest release tag
+        id: latest
+        env:
+          TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          printf "from scanner.cli import main\nmain()\n" > entry_cli.py
-          printf "from scanner.gui import launch_gui\nlaunch_gui()\n" > entry_gui.py
+          LATEST=$(curl -s -H "Authorization: token ${TOKEN}" \
+            https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r '.tag_name // empty')
+          [ -n "$LATEST" ] || LATEST="0.0.0"
+          CLEAN=$(printf "%s" "$LATEST" | sed -E 's/^[^0-9]*//')
+          echo "latest=$CLEAN" >> $GITHUB_OUTPUT
 
-      - name: Build (CLI console)
+      - name: Compare versions
+        id: compare
         run: |
-          pyinstaller --noconfirm --onefile --console --name IoCScanner-CLI entry_cli.py
+          echo "NEW=${{ steps.read.outputs.version }} ; LATEST=${{ steps.latest.outputs.latest }}"
+          if dpkg --compare-versions "${{ steps.read.outputs.version }}" gt "${{ steps.latest.outputs.latest }}"; then
+            echo "greater=true" >> $GITHUB_OUTPUT
+          else
+            echo "greater=false" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Build (GUI windowed)
-        run: |
-          pyinstaller --noconfirm --onefile --windowed --name IoCScanner-GUI entry_gui.py
+      - name: Compute tag
+        id: tag
+        run: echo "tag=v${{ steps.read.outputs.version }}" >> $GITHUB_OUTPUT
 
-      - name: Tarball Linux binaries
-        run: |
-          tar -C dist -czf dist/IoCScanner-linux.tar.gz IoCScanner-CLI IoCScanner-GUI
-
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-binaries
-          path: |
-            dist/IoCScanner-linux.tar.gz
-
-  build-binaries-macos:
-    name: build binaries (macOS)
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: macos-latest
-    needs: tests
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Install PyInstaller
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pyinstaller
-
-      - name: Create entry wrappers (no if-main)
-        run: |
-          printf "from scanner.cli import main\nmain()\n" > entry_cli.py
-          printf "from scanner.gui import launch_gui\nlaunch_gui()\n" > entry_gui.py
-
-      - name: Build (CLI console)
-        run: |
-          pyinstaller --noconfirm --onefile --console --name IoCScanner-CLI entry_cli.py
-
-      - name: Build (GUI windowed)
-        run: |
-          pyinstaller --noconfirm --onefile --windowed --name IoCScanner-GUI entry_gui.py
-
-      - name: Zip macOS binaries
-        run: |
-          cd dist && zip -r IoCScanner-macos.zip IoCScanner-CLI IoCScanner-GUI
-
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-binaries
-          path: |
-            dist/IoCScanner-macos.zip
-
-  github-release:
-    name: GitHub Release
-    if: startsWith(github.ref, 'refs/tags/v')
+  tests:
+    name: tests (python 3.13)
     runs-on: ubuntu-latest
-    needs: [build-pkg, build-binaries-windows, build-binaries-linux, build-binaries-macos]
+    needs: prepare
     steps:
-      - name: Download dist
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.13' }
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+          [ -f requirements.txt ] && python -m pip install -r requirements.txt || true
+          python -m pytest -q || echo "No tests"
 
-      - name: Download windows binaries
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-binaries
-          path: dist/
+  build_pkg:
+    name: build sdist+wheel
+    runs-on: ubuntu-latest
+    needs: [prepare, tests]
+    if: needs.prepare.outputs.should_release == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: |
+          python -m pip install --upgrade pip build
+          [ -f pyproject.toml ] || [ -f setup.cfg ] || [ -f setup.py ] && python -m build || { mkdir -p dist && echo "no-package" > dist/NO_PYPROJECT; }
+      - uses: actions/upload-artifact@v4
+        with: { name: dist, path: dist/* }
 
-      - name: Download linux binaries
-        uses: actions/download-artifact@v4
-        with:
-          name: linux-binaries
-          path: dist/
+  build_binaries_windows:
+    name: build binaries (Windows)
+    runs-on: windows-latest
+    needs: [prepare, tests]
+    if: needs.prepare.outputs.should_release == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - shell: pwsh
+        run: |
+          python -m pip install --upgrade pip pyinstaller
+          Set-Content entry_cli.py @"
+          from scanner.cli import main
+          if __name__ == "__main__":
+              main()
+          "@
+                    Set-Content entry_gui.py @"
+          from scanner.gui import launch_gui
+          if __name__ == "__main__":
+              launch_gui()
+          "@
+                    pyinstaller --noconfirm --onefile --console  --name IoCScanner-CLI entry_cli.py
+                    pyinstaller --noconfirm --onefile --windowed --name IoCScanner-GUI entry_gui.py
+                - uses: actions/upload-artifact@v4
+                  with:
+                    name: windows-binaries
+                    path: |
+                      dist/IoCScanner-CLI.exe
+                      dist/IoCScanner-GUI.exe
+          
+  build_binaries_linux:
+    name: build binaries (Linux)
+    runs-on: ubuntu-latest
+    needs: [prepare, tests]
+    if: needs.prepare.outputs.should_release == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: |
+          sudo apt-get update && sudo apt-get install -y python3-tk tk
+          python -m pip install --upgrade pip pyinstaller
+          cat > entry_cli.py << 'PY'
+          from scanner.cli import main
+          if __name__ == "__main__":
+            main()
+          PY
+                  cat > entry_gui.py << 'PY'
+          from scanner.gui import launch_gui
+          if __name__ == "__main__":
+            launch_gui()
+          PY
+                  pyinstaller --noconfirm --onefile --console  --name IoCScanner-CLI entry_cli.py
+                  pyinstaller --noconfirm --onefile --windowed --name IoCScanner-GUI entry_gui.py
+                  tar -C dist -czf dist/IoCScanner-linux.tar.gz IoCScanner-CLI IoCScanner-GUI
+              - uses: actions/upload-artifact@v4
+                with: { name: linux-binaries, path: dist/IoCScanner-linux.tar.gz }
 
-      - name: Download macOS binaries
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-binaries
-          path: dist/
+  build_binaries_macos:
+    name: build binaries (macOS)
+    runs-on: macos-latest
+    needs: [prepare, tests]
+    if: needs.prepare.outputs.should_release == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: |
+          python -m pip install --upgrade pip pyinstaller
+          cat > entry_cli.py << 'PY'
+          from scanner.cli import main
+          if __name__ == "__main__":
+            main()
+          PY
+                  cat > entry_gui.py << 'PY'
+          from scanner.gui import launch_gui
+          if __name__ == "__main__":
+            launch_gui()
+          PY
+                  pyinstaller --noconfirm --onefile --console  --name IoCScanner-CLI entry_cli.py
+                  pyinstaller --noconfirm --onefile --windowed --name IoCScanner-GUI entry_gui.py
+                  cd dist && zip -r IoCScanner-macos.zip IoCScanner-CLI IoCScanner-GUI
+              - uses: actions/upload-artifact@v4
+                with: { name: macos-binaries, path: dist/IoCScanner-macos.zip }
 
-      - name: Create GitHub Release
+  release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    needs: [prepare, build_pkg, build_binaries_windows, build_binaries_linux, build_binaries_macos]
+    if: needs.prepare.outputs.should_release == 'true'
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: dist, path: dist/ }
+      - uses: actions/download-artifact@v4
+        with: { name: windows-binaries, path: dist/ }
+      - uses: actions/download-artifact@v4
+        with: { name: linux-binaries, path: dist/ }
+      - uses: actions/download-artifact@v4
+        with: { name: macos-binaries, path: dist/ }
+      - name: Create/Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: IoC-Scanner ${{ github.ref_name }}
-          files: |
-            dist/**
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: IoC Scanner v${{ needs.prepare.outputs.version }}
           generate_release_notes: true
+          files: dist/**
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
