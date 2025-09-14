@@ -12,7 +12,8 @@ from scanner.utils import fetch_json, SIGNATURE_BASE_URL, CACHE_DIR
 # Valeurs de secours (utilisées si le dépôt de signatures est indisponible)
 # ---------------------------------------------------------------------------
 
-# BEGIN DEFAULT_MINER_FILE_HINTS (AUTO)DEFAULT_MINER_FILE_HINTS: List[str] = [
+# BEGIN DEFAULT_MINER_FILE_HINTS (AUTO)
+DEFAULT_MINER_FILE_HINTS: List[str] = [
     "xmrig(\.exe)?$",
     "lolminer(\.exe)?$",
     "nbminer(\.exe)?$",
@@ -25,9 +26,11 @@ from scanner.utils import fetch_json, SIGNATURE_BASE_URL, CACHE_DIR
     "cpuminer(\.exe)?$",
     "minerd(\.exe)?$",
     "__test__fake_miner(\.exe)?$"
-]# END DEFAULT_MINER_FILE_HINTS (AUTO)
+]
+# END DEFAULT_MINER_FILE_HINTS (AUTO)
 
-# BEGIN DEFAULT_MINER_PROC_HINTS (AUTO)DEFAULT_MINER_PROC_HINTS: List[str] = [
+# BEGIN DEFAULT_MINER_PROC_HINTS (AUTO)
+DEFAULT_MINER_PROC_HINTS: List[str] = [
     "\bxmrig\b",
     "\blolminer\b",
     "\bnbminer\b",
@@ -39,9 +42,11 @@ from scanner.utils import fetch_json, SIGNATURE_BASE_URL, CACHE_DIR
     "\bastrominer\b",
     "\bcpuminer\b",
     "\bminerd\b"
-]# END DEFAULT_MINER_PROC_HINTS (AUTO)
+]
+# END DEFAULT_MINER_PROC_HINTS (AUTO)
 
-# BEGIN DEFAULT_SUSPICIOUS_SCRIPT_PATTERNS (AUTO)DEFAULT_SUSPICIOUS_SCRIPT_PATTERNS: List[str] = [
+# BEGIN DEFAULT_SUSPICIOUS_SCRIPT_PATTERNS (AUTO)
+DEFAULT_SUSPICIOUS_SCRIPT_PATTERNS: List[str] = [
     "curl\s+[^|]+?\|\s*(bash|sh|zsh|python|python3)",
     "wget\s+[^|]+?\|\s*(bash|sh|zsh|python|python3)",
     "Invoke-WebRequest.+\|\s*iex",
@@ -53,7 +58,8 @@ from scanner.utils import fetch_json, SIGNATURE_BASE_URL, CACHE_DIR
     "(?:crontab|systemctl)\s+(?:-|\w+)",
     "chmod\s+\+x\s+/tmp/.*",
     "base64\s+-d\s+.+\|\s*(bash|sh|zsh|python|python3)"
-]# END DEFAULT_SUSPICIOUS_SCRIPT_PATTERNS (AUTO)
+]
+# END DEFAULT_SUSPICIOUS_SCRIPT_PATTERNS (AUTO)
 
 
 # ---------------------------------------------------------------------------
