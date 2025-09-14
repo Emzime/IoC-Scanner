@@ -109,10 +109,57 @@ jobs:
           if __name__ == "__main__":
               main()
           "@
-                    Set-Content entry_gui.py @"
+          Set-Content entry_gui.py @"
           from scanner.gui import launch_gui
           if __name__ == "__main__":
               launch_gui()
+          "@
+
+      # Prépare icône + version info + manifest (réduit les heuristiques)
+      - name: Prepare Windows resources (icon + version file + manifest)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "build-res" | Out-Null
+
+          $ico = "scanner/assets/IoC-Scanner.ico"
+          if (!(Test-Path $ico)) { Write-Error "Icon not found: $ico"; exit 1 }
+
+          $ver = "${{ needs.build.outputs.version }}"
+          if ([string]::IsNullOrWhiteSpace($ver)) { $ver = "0.0.0" }
+
+          # VSVersionInfo (pour --version-file)
+          Set-Content build-res\file_version.txt @"
+          # UTF-8
+          VSVersionInfo(
+            ffi=FixedFileInfo(
+              filevers=($($ver -replace '\.', ', ')), prodvers=($($ver -replace '\.', ', ')),
+              mask=0x3f, flags=0x0, OS=0x40004, fileType=0x1, subtype=0x0, date=(0, 0)
+            ),
+            kids=[
+              StringFileInfo([StringTable('040904B0', [
+                StringStruct('CompanyName', 'IoC-Scanner'),
+                StringStruct('FileDescription', 'IoC-Scanner'),
+                StringStruct('FileVersion', '$ver'),
+                StringStruct('ProductName', 'IoC-Scanner'),
+                StringStruct('ProductVersion', '$ver')
+              ])]),
+              VarFileInfo([VarStruct('Translation', [1033, 1200])])
+            ]
+          )
+          "@
+          
+                    # Manifest sans élévation UAC
+                    Set-Content build-res\app.manifest @"
+          <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+          <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+            <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+              <security>
+                <requestedPrivileges>
+                  <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
+                </requestedPrivileges>
+              </security>
+            </trustInfo>
+          </assembly>
           "@
 
       - name: Build Windows Standalone (CLI)
@@ -122,18 +169,63 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
           $exeName = "IoCScanner_CLI_Windows_v$version"
           "WINDOWS_CLI_EXE=$exeName.exe" >> $env:GITHUB_ENV
-          pyinstaller --noconfirm --onefile --console --name $exeName entry_cli.py
+
+          pyinstaller --noconfirm --clean --onefile --noupx --console `
+            --name $exeName `
+            --icon "scanner/assets/IoC-Scanner.ico" `
+            --version-file "build-res/file_version.txt" `
+            --manifest "build-res/app.manifest" `
+            entry_cli.py
+
           if (!(Test-Path "dist\$exeName.exe")) { Write-Error "EXE CLI manquant"; exit 1 }
 
-      - name: Build Windows Standalone (GUI)
+      - name: Build Windows Standalone (GUI)  # onefile
         shell: pwsh
         run: |
           $version = "${{ needs.build.outputs.version }}"
           if ([string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
           $exeName = "IoCScanner_GUI_Windows_v$version"
           "WINDOWS_GUI_EXE=$exeName.exe" >> $env:GITHUB_ENV
-          pyinstaller --noconfirm --onefile --windowed --name $exeName entry_gui.py
+
+          pyinstaller --noconfirm --clean --onefile --noupx --windowed `
+            --name $exeName `
+            --icon "scanner/assets/IoC-Scanner.ico" `
+            --version-file "build-res/file_version.txt" `
+            --manifest "build-res/app.manifest" `
+            entry_gui.py
+
           if (!(Test-Path "dist\$exeName.exe")) { Write-Error "EXE GUI manquant"; exit 1 }
+
+      # Variante onedir utile si Defender bloque la onefile
+      - name: Build Windows Standalone (GUI - onedir alternatif)
+        shell: pwsh
+        run: |
+          $version = "${{ needs.build.outputs.version }}"
+          if ([string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
+          $dirName = "IoCScanner_GUI_Windows_onedir_v$version"
+
+          pyinstaller --noconfirm --clean --onedir --noupx --windowed `
+            --name $dirName `
+            --icon "scanner/assets/IoC-Scanner.ico" `
+            --version-file "build-res/file_version.txt" `
+            --manifest "build-res/app.manifest" `
+            entry_gui.py
+
+          if (!(Test-Path "dist\$dirName\$dirName.exe")) { Write-Error "EXE GUI onedir manquant"; exit 1 }
+
+          # Zip du onedir pour release
+          Compress-Archive -Path "dist\$dirName\*" -DestinationPath "dist\$dirName.zip" -Force
+
+      # (Optionnel) Signature de code si secret fourni
+      - name: Code sign (Windows) - optional
+        if: ${{ secrets.WIN_CODE_SIGN_PFX && secrets.WIN_CODE_SIGN_PASS }}
+        shell: pwsh
+        run: |
+          $pfxPath = "$env:RUNNER_TEMP\codesign.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String("${{ secrets.WIN_CODE_SIGN_PFX }}"))
+          $signtool = "C:\Program Files (x86)\Windows Kits\10\App Certification Kit\signtool.exe"
+          & $signtool sign /f $pfxPath /p "${{ secrets.WIN_CODE_SIGN_PASS }}" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "dist\${{ env.WINDOWS_CLI_EXE }}"
+          & $signtool sign /f $pfxPath /p "${{ secrets.WIN_CODE_SIGN_PASS }}" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "dist\${{ env.WINDOWS_GUI_EXE }}"
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -142,6 +234,7 @@ jobs:
           path: |
             dist/${{ env.WINDOWS_CLI_EXE }}
             dist/${{ env.WINDOWS_GUI_EXE }}
+            dist/IoCScanner_GUI_Windows_onedir_v*.zip
           if-no-files-found: error
           retention-days: 7
 
@@ -175,7 +268,7 @@ jobs:
           if __name__ == "__main__":
               main()
           PY
-                    cat > entry_gui.py << 'PY'
+          cat > entry_gui.py << 'PY'
           from scanner.gui import launch_gui
           if __name__ == "__main__":
               launch_gui()
@@ -189,7 +282,7 @@ jobs:
           version="${VERSION:-0.0.0}"
           exeName="IoCScanner_CLI_Linux_v${version}"
           echo "LINUX_CLI_BIN=${exeName}" >> $GITHUB_ENV
-          pyinstaller --noconfirm --onefile --console --name "$exeName" entry_cli.py
+          pyinstaller --noconfirm --clean --noupx --onefile --console --name "$exeName" entry_cli.py
           [ -f "dist/$exeName" ]
 
       - name: Build Linux Standalone (GUI)
@@ -200,7 +293,7 @@ jobs:
           version="${VERSION:-0.0.0}"
           exeName="IoCScanner_GUI_Linux_v${version}"
           echo "LINUX_GUI_BIN=${exeName}" >> $GITHUB_ENV
-          pyinstaller --noconfirm --onefile --windowed --name "$exeName" entry_gui.py
+          pyinstaller --noconfirm --clean --noupx --onefile --windowed --name "$exeName" entry_gui.py
           [ -f "dist/$exeName" ]
 
       - name: Archive Linux binaries
@@ -244,7 +337,7 @@ jobs:
           if __name__ == "__main__":
               main()
           PY
-                    cat > entry_gui.py << 'PY'
+          cat > entry_gui.py << 'PY'
           from scanner.gui import launch_gui
           if __name__ == "__main__":
               launch_gui()
@@ -258,7 +351,7 @@ jobs:
           version="${VERSION:-0.0.0}"
           exeName="IoCScanner_CLI_macOS_v${version}"
           echo "MAC_CLI_BIN=${exeName}" >> $GITHUB_ENV
-          pyinstaller --noconfirm --onefile --console --name "$exeName" entry_cli.py
+          pyinstaller --noconfirm --clean --noupx --onefile --console --name "$exeName" entry_cli.py
           [ -f "dist/$exeName" ]
 
       - name: Build macOS (GUI)
@@ -269,7 +362,7 @@ jobs:
           version="${VERSION:-0.0.0}"
           exeName="IoCScanner_GUI_macOS_v${version}"
           echo "MAC_GUI_BIN=${exeName}" >> $GITHUB_ENV
-          pyinstaller --noconfirm --onefile --windowed --name "$exeName" entry_gui.py
+          pyinstaller --noconfirm --clean --noupx --onefile --windowed --name "$exeName" entry_gui.py
           [ -f "dist/$exeName" ]
 
       - name: Zip macOS binaries
@@ -313,7 +406,11 @@ jobs:
         with:
           tag_name: ${{ needs.build.outputs.tag }}
           name: IoC-Scanner v${{ needs.build.outputs.version }}
-          body: Windows, Linux & macOS standalone builds
+          body: |
+            Windows, Linux & macOS standalone builds.
+            - Windows: onefile (CLI/GUI) + alternative GUI onedir .zip
+            - Linux: onefile (CLI/GUI)
+            - macOS: onefile (CLI/GUI)
           files: |
             dist/**/*
         env:
