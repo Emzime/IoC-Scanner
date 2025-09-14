@@ -14,7 +14,7 @@ try:
     import tkinter as tk
     from tkinter import ttk, filedialog, messagebox
     TK_AVAILABLE = True
-except ImportError:  # environnement sans Tk (serveur/headless)
+except ImportError:
     tk = None  # type: ignore
     ttk = None  # type: ignore
     filedialog = None  # type: ignore
@@ -138,7 +138,6 @@ def launch_gui() -> None:
     app.minsize(1080, 720)
 
     # --- Icône fenêtre (Windows: .ico | Linux/macOS: .png) ---
-    # Chemins packagés (via --add-data ...;assets / :assets) ET chemins locaux (dev)
     ico_packed = Path(_resource_path("assets", "icon.ico"))
     png_packed = Path(_resource_path("assets", "icon.png"))
     ico_local  = Path(__file__).resolve().parent / "assets" / "icon.ico"
@@ -162,7 +161,6 @@ def launch_gui() -> None:
             app.iconphoto(True, _icon_img)
             app._icon_img = _icon_img  # éviter le GC
         except tk.TclError:
-            # Icône non bloquante : on ignore proprement
             pass
 
     # --- Vars (défauts intelligents) ---
