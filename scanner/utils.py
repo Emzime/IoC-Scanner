@@ -3,7 +3,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import csv, json, hashlib, locale, os, re, shutil, stat, subprocess, sys
+import csv, json, hashlib, locale, os, re, shutil, stat, subprocess, sys, requests, time
 
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +16,49 @@ IS_LIN = sys.platform.startswith("linux")
 
 # --- Timeout global pour les commandes externes (surchargé par options.exec_timeout) ---
 EXEC_TIMEOUT: int = 60
+
+# URL du dépôt
+SIGNATURE_BASE_URL = os.environ.get(
+    "IOC_SIGNATURES_URL",
+    "https://raw.githubusercontent.com/Emzime/IoC-Signatures/main"
+)
+
+CACHE_DIR = Path.home() / ".ioc_scanner"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+def fetch_json(url: str, cache_file: Path, max_age: int = 86400) -> dict:
+    """
+    Télécharge un JSON distant avec fallback sur un cache local.
+    Max_age : durée max du cache (secondes)
+    """
+    now = time.time()
+    try:
+        # utiliser le cache si pas trop vieux
+        if cache_file.exists() and (now - cache_file.stat().st_mtime < max_age):
+            return json.loads(cache_file.read_text(encoding="utf-8"))
+
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+
+        # mettre à jour le cache
+        cache_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return data
+
+    except (requests.RequestException, json.JSONDecodeError) as e:
+        print(f"[!] Erreur réseau/JSON pour {url}: {e}")
+
+    except (OSError, IOError) as e:
+        print(f"[!] Erreur fichier cache {cache_file}: {e}")
+
+    # fallback si tout échoue
+    if cache_file.exists():
+        try:
+            return json.loads(cache_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            print(f"[!] Cache corrompu: {cache_file}")
+
+    return {}
 
 # ---------------------------------------------------------------------------
 # Utilitaires système / fichiers
@@ -36,7 +79,7 @@ def get_documents_dir() -> Path:
     doc = home / "Documents"
     return doc if doc.exists() else home
 
-def get_app_name(default: str = "IoC Scanner") -> str:
+def get_app_name(default: str = "IoC-Scanner") -> str:
     """Nom humain de l’app (env IOC_APP_NAME > nom du script)."""
     env = os.environ.get("IOC_APP_NAME")
     if env:
@@ -63,7 +106,7 @@ def default_exclude_names() -> List[str]:
         return [
             "Windows", "Program Files", "Program Files (x86)", "ProgramData",
             "AppData", "PerfLogs", "$Recycle.Bin", "System Volume Information",
-            "Recovery", "Windows.old", r"%USERPROFILE%\.vscode\extensions",
+            "Recovery", "Windows.old", "extensions",
         ]
     elif IS_MAC:
         return [
@@ -140,10 +183,10 @@ def write_csv(rows: List[Dict[str, str]], path: str, delimiter: str | None = Non
 
     out_path = Path(path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    effective_delim = (delimiter if delimiter and len(delimiter) == 1 else default_csv_delimiter())
+    effective_deli = (delimiter if delimiter and len(delimiter) == 1 else default_csv_delimiter())
     with out_path.open("w", encoding="utf-8-sig", newline="") as fh:
         fieldnames = ["Category", "Project", "Item", "Detail", "Severity", "SeverityText", "DescriptorPath"]
-        writer = csv.DictWriter(fh, fieldnames=fieldnames, delimiter=effective_delim)
+        writer = csv.DictWriter(fh, fieldnames=fieldnames, delimiter=effective_deli)
         writer.writeheader()
         for row_rec in rows:
             rec = dict(row_rec)
@@ -285,6 +328,8 @@ def path_is_world_writable(p: Path) -> bool:
 __all__ = [
     # OS flags / timeout
     "IS_WIN", "IS_MAC", "IS_LIN", "EXEC_TIMEOUT",
+    # signatures auto-update
+    "SIGNATURE_BASE_URL", "CACHE_DIR", "fetch_json",
     # chemins et noms
     "get_default_root", "get_documents_dir", "get_app_name", "get_reports_dir",
     "default_output_path", "default_exclude_names", "default_exclude_csv", "default_csv_delimiter",
@@ -299,3 +344,4 @@ __all__ = [
     # linux-tuning
     "path_is_world_writable",
 ]
+

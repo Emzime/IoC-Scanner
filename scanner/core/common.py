@@ -50,8 +50,8 @@ def is_compromised(name: str, version: str) -> bool:
     return name in BAD_PACKAGES and version in BAD_PACKAGES[name]
 
 def walk_package_tree(
-    node: Dict[str, Any], current_name: str, path_stack: List[str],
-    rows: List[Dict[str, str]], project: str, only_risk: bool,
+        node: Dict[str, Any], current_name: str, path_stack: List[str],
+        rows: List[Dict[str, str]], project: str, only_risk: bool,
 ) -> None:
     if not isinstance(node, dict):
         return
@@ -79,7 +79,7 @@ def _depth_of(dirpath: str, root: Path) -> int:
         return max(0, len(Path(dirpath).parts) - len(root.parts))
 
 def scan_sysupdater_in_dir(base: Path, project_tag: str, rows: List[Dict[str, str]],
-                           *, log_fn=None, verbose: bool=False, cancel: Optional[threading.Event]=None) -> None:
+                           *, log_fn=None, verbose: bool = False, cancel: Optional[threading.Event] = None) -> None:
     for dirpath, _, files in os.walk(base, topdown=True):
         if _should_stop(cancel):
             return
@@ -95,9 +95,9 @@ def scan_sysupdater_in_dir(base: Path, project_tag: str, rows: List[Dict[str, st
                 add_row(rows, "IoC:sysupdater", project_tag, filename, detail, "HIGH")
 
 def scan_npm_project(
-    proj_dir: Path, rows: List[Dict[str, str]], only_risk: bool=False,
-    check_sysupdater: bool=True, check_scripts: bool=True, *,
-    log_fn=None, verbose: bool=False, cancel: Optional[threading.Event]=None,
+        proj_dir: Path, rows: List[Dict[str, str]], only_risk: bool = False,
+        check_sysupdater: bool = True, check_scripts: bool = True, *,
+        log_fn=None, verbose: bool = False, cancel: Optional[threading.Event] = None,
 ) -> None:
     if _should_stop(cancel):
         return
@@ -225,10 +225,10 @@ def scan_npm_project(
         scan_sysupdater_in_dir(proj_dir, project, rows, log_fn=log_fn, verbose=verbose, cancel=cancel)
 
 def scan_projects_under_root(
-    root: Path, exclude_names: Iterable[str], rows: List[Dict[str, str]],
-    only_risk: bool, check_sysupdater: bool, check_scripts: bool,
-    max_depth: int = 6, follow_links: bool = False, *,
-    log_fn=None, verbose: bool=False, cancel: Optional[threading.Event]=None,
+        root: Path, exclude_names: Iterable[str], rows: List[Dict[str, str]],
+        only_risk: bool, check_sysupdater: bool, check_scripts: bool,
+        max_depth: int = 6, follow_links: bool = False, *,
+        log_fn=None, verbose: bool = False, cancel: Optional[threading.Event] = None,
 ) -> None:
     exclusions = {name.strip().lower() for name in exclude_names if name and name.strip()}
     for dirpath, dirnames, filenames in os.walk(root, topdown=True, followlinks=follow_links):
@@ -239,13 +239,29 @@ def scan_projects_under_root(
             continue
         if verbose and log_fn:
             log_fn(f"[v] Dir: {dirpath}")
+
         pruned = []
         for d in dirnames:
             dl = d.lower()
+
+            # exclusions générales
             if dl in exclusions or dl in {"node_modules", ".git", ".hg", ".svn", ".cache", "__pycache__"}:
+                # mais cas spécial : extensions doit être ignoré uniquement sous.vscode
+                if dl == "extensions" and Path(dirpath).name.lower() != ".vscode":
+                    pruned.append(d)
                 continue
+
+            # exclusion spécifique : extensions sous .vscode
+            if dl == "extensions" and Path(dirpath).name.lower() == ".vscode":
+                if verbose and log_fn:
+                    log_fn(f"[v] Ignoré: {Path(dirpath) / d}")
+                continue
+
             pruned.append(d)
+
         dirnames[:] = pruned
+
+        # détection de projet npm
         if "package.json" in (name.lower() for name in filenames):
             proj_dir = Path(dirpath)
             if log_fn:
@@ -287,22 +303,20 @@ def scan_listening_ports(rows: List[Dict[str, str]]) -> None:
             # detect delimiter (',' in en-US, ';' in some locales)
             try:
                 sample = "\n".join(lines[:5]) or ","
-                delim = csv.Sniffer().sniff(sample).delimiter
+                deli = csv.Sniffer().sniff(sample).delimiter
             except csv.Error:
-                delim = ","
+                deli = ","
 
-            rdr = csv.DictReader(lines, delimiter=delim)
+            rdr = csv.DictReader(lines, delimiter=deli)
             for rec in rdr:
                 raw_name = (rec.get("Image Name") or rec.get("Nom de l'image") or "").strip()
                 raw_pid = (rec.get("PID") or rec.get("Identificateur de processus") or "").strip()
-                if not raw_pid:
+                if not (raw_name and raw_pid):
                     continue
                 try:
-                    pid = int(raw_pid)
+                    pid_name[int(raw_pid)] = raw_name
                 except (ValueError, TypeError):
                     continue
-                if raw_name:
-                    pid_name[pid] = raw_name
 
         code, out, _ = run_capture_ext(["netstat", "-ano"])
         if code != 0 or not out:
@@ -320,7 +334,6 @@ def scan_listening_ports(rows: List[Dict[str, str]]) -> None:
             local_addr = parts[1]
 
             # PID is last column on Windows
-            pid: Optional[int] = None
             try:
                 pid = int(parts[-1])
             except (ValueError, TypeError):
@@ -389,8 +402,8 @@ def scan_shell_profiles(rows: List[Dict[str, str]], *, log=None) -> None:
                 log(f"[!] Lecture impossible: {p}")
 
 def scan_sysupdater_global(
-    root: Path, exclude_names: Iterable[str], rows: List[Dict[str, str]], max_depth: int=12, *,
-    log_fn=None, verbose: bool=False, cancel: Optional[threading.Event]=None,
+        root: Path, exclude_names: Iterable[str], rows: List[Dict[str, str]], max_depth: int = 12, *,
+        log_fn=None, verbose: bool = False, cancel: Optional[threading.Event] = None,
 ) -> None:
     exclusions = {name.lower() for name in exclude_names}
     for dirpath, dirnames, files in os.walk(root, topdown=True):
@@ -412,8 +425,8 @@ def scan_sysupdater_global(
                 add_row(rows, "IoC:sysupdater", str(root), filename, detail, "HIGH")
 
 def scan_miner_files(
-    root: Path, exclude_names: Iterable[str], rows: List[Dict[str, str]], max_depth: int=8, *,
-    log_fn=None, verbose: bool=False, cancel: Optional[threading.Event]=None,
+        root: Path, exclude_names: Iterable[str], rows: List[Dict[str, str]], max_depth: int = 8, *,
+        log_fn=None, verbose: bool = False, cancel: Optional[threading.Event] = None,
 ) -> None:
     exclusions = {name.lower() for name in exclude_names}
     compiled = [re.compile(rx, re.I) for rx in MINER_FILE_HINTS]
@@ -435,7 +448,7 @@ def scan_miner_files(
                 detail = f"{full} (SHA256={digest})" if digest else str(full)
                 add_row(rows, "miner:file", str(root), filename, detail, "HIGH")
 
-def scan_miner_processes(rows: List[Dict[str, str]], *, log=None, verbose: bool=False) -> None:
+def scan_miner_processes(rows: List[Dict[str, str]], *, log=None, verbose: bool = False) -> None:
     name_rx = [re.compile(pattern, re.I) for pattern in MINER_PROC_HINTS]
     for name, pid, cmd, _ in list_processes():
         low = (name or "").lower()
@@ -449,8 +462,8 @@ def scan_miner_processes(rows: List[Dict[str, str]], *, log=None, verbose: bool=
             add_row(rows, "miner:process", "", name, detail, severity)
 
 def run_scan_core(
-    root: Path, exclude_names: Iterable[str], options: SimpleNamespace, *,
-    log_fn=None, cancel: Optional[threading.Event]=None,
+        root: Path, exclude_names: Iterable[str], options: SimpleNamespace, *,
+        log_fn=None, cancel: Optional[threading.Event] = None,
 ):
     def log(message: str) -> None:
         if log_fn:

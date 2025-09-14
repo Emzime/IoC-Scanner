@@ -232,10 +232,10 @@ def scan_persistence(rows: List[Dict[str, str]], *, log=None, verbose: bool=Fals
     try:
         sample = "\n".join(out.splitlines()[:10])
         dialect = csv.Sniffer().sniff(sample)
-        delim = dialect.delimiter
+        deli = dialect.delimiter
     except csv.Error:
-        delim = ','
-    reader = csv.DictReader(out.splitlines(), delimiter=delim)
+        deli = ','
+    reader = csv.DictReader(out.splitlines(), delimiter=deli)
 
     def pick(d: Dict[str, str], *alts: str) -> str:
         for k in alts:

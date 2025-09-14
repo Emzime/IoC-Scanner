@@ -72,7 +72,7 @@ def main() -> None:
 
     root = Path(args.root).resolve()
     exclude = [name.strip() for name in (args.exclude or "").split(",") if name.strip()]
-    cli_delim = args.delimiter if args.delimiter is not None else default_csv_delimiter()
+    cli_deli = args.delimiter if args.delimiter is not None else default_csv_delimiter()
 
     print(f"[i] Début du scan — {datetime.now().isoformat(timespec='seconds')}")
     print(f"[i] Racine : {root}")
@@ -90,7 +90,7 @@ def main() -> None:
         persistence=args.persistence,
         csv=args.csv,
         json=args.json,
-        delimiter=cli_delim,
+        delimiter=cli_deli,
         max_depth=args.max_depth,
         follow_links=args.follow_links,
         verbose=args.verbose,

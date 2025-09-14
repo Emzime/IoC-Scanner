@@ -139,8 +139,8 @@ def launch_gui() -> None:
     scan_npm_var = tk.BooleanVar(value=True)
     scripts_var = tk.BooleanVar(value=True)
     only_risk_var = tk.BooleanVar(value=True)
-    sysupd_proj_var = tk.BooleanVar(value=True)
-    sysupd_global_var = tk.BooleanVar(value=False)
+    sys_upd_proj_var = tk.BooleanVar(value=True)
+    sys_upd_global_var = tk.BooleanVar(value=False)
     miners_var = tk.BooleanVar(value=False)
     persist_var = tk.BooleanVar(value=True)
     verbose_var = tk.BooleanVar(value=True)
@@ -158,7 +158,7 @@ def launch_gui() -> None:
 
     # macOS
     launch_globals_var = tk.BooleanVar(value=IS_MAC)
-    loginitems_var = tk.BooleanVar(value=IS_MAC)
+    login_items_var = tk.BooleanVar(value=IS_MAC)
     profiles_var = tk.BooleanVar(value=False)
 
     # Linux
@@ -170,7 +170,7 @@ def launch_gui() -> None:
 
     save_csv_var = tk.BooleanVar(value=True)
     save_json_var = tk.BooleanVar(value=False)
-    delim_var = tk.StringVar(value=default_csv_delimiter())
+    deli_var = tk.StringVar(value=default_csv_delimiter())
 
     # --- Layout principal ---
     frm = ttk.Frame(app, padding=12)
@@ -221,8 +221,8 @@ def launch_gui() -> None:
         ("Scan npm (packages)", scan_npm_var, "Analyse les dépendances installées (node_modules) et leurs versions."),
         ("Analyser scripts npm (install/postinstall…)", scripts_var, "Inspecte les scripts npm susceptibles de s'exécuter à l'installation."),
         ("Seulement paquets à risque", only_risk_var, "N'affiche que les paquets identifiés comme compromis."),
-        ("IoC .sysupdater (projets)", sysupd_proj_var, "Recherche un fichier .sysupdater.dat dans chaque projet."),
-        ("IoC .sysupdater (global)", sysupd_global_var, "Recherche .sysupdater.dat partout sous la racine (plus lent)."),
+        ("IoC .sysupdater (projets)", sys_upd_proj_var, "Recherche un fichier .sysupdater.dat dans chaque projet."),
+        ("IoC .sysupdater (global)", sys_upd_global_var, "Recherche .sysupdater.dat partout sous la racine (plus lent)."),
         ("Persistance (OS)", persist_var, "Liste quelques mécanismes de démarrage automatique selon l'OS."),
         ("Journal détaillé (projets/dirs)", verbose_var, "Affiche chaque répertoire ou projet visité."),
         ("Mineurs (fichiers + process)", miners_var, "Signatures de mineurs : fichiers et processus (xmrig, etc.)."),
@@ -246,7 +246,7 @@ def launch_gui() -> None:
     if IS_MAC:
         mac_items = [
             ("LaunchDaemons/Agents (macOS)", launch_globals_var, "Liste les LaunchDaemons/Agents globaux."),
-            ("Login Items (macOS)", loginitems_var, "Éléments ouverts automatiquement à la connexion."),
+            ("Login Items (macOS)", login_items_var, "Éléments ouverts automatiquement à la connexion."),
             ("Profiles (macOS)", profiles_var, "Profils de configuration installés."),
         ]
     if IS_LIN:
@@ -339,7 +339,7 @@ def launch_gui() -> None:
     btn_json = ttk.Button(outbox, text="Parcourir…", command=choose_json); btn_json.grid(row=1, column=2, padx=2, pady=2)
 
     ttk.Label(outbox, text="Délimiteur CSV (défaut auto):").grid(row=2, column=0, sticky=tk.E, padx=4, pady=2)
-    ttk.Entry(outbox, textvariable=delim_var, width=5).grid(row=2, column=1, sticky=tk.W, padx=2, pady=2)
+    ttk.Entry(outbox, textvariable=deli_var, width=5).grid(row=2, column=1, sticky=tk.W, padx=2, pady=2)
 
     toggle_csv(); toggle_json()
 
@@ -458,13 +458,13 @@ def launch_gui() -> None:
             no_npm=not scan_npm_var.get(),
             only_risk=only_risk_var.get(),
             no_scripts=not scripts_var.get(),
-            sysupdater_project=sysupd_proj_var.get(),
-            sysupdater_global=sysupd_global_var.get(),
+            sysupdater_project=sys_upd_proj_var.get(),
+            sysupdater_global=sys_upd_global_var.get(),
             miners=miners_var.get(),
             persistence=persist_var.get(),
             csv=(csv_var.get().strip() if save_csv_var.get() else None),
             json=(json_var.get().strip() if save_json_var.get() else None),
-            delimiter=(delim_var.get().strip() or default_csv_delimiter()),
+            delimiter=(deli_var.get().strip() or default_csv_delimiter()),
             max_depth=max_depth_var.get(),
             follow_links=follow_links_var.get(),
             verbose=verbose_var.get(),
@@ -477,7 +477,7 @@ def launch_gui() -> None:
             proxy=proxy_var.get(),
             wmi=wmi_var.get(),
             launch_globals=launch_globals_var.get(),
-            login_items=loginitems_var.get(),
+            login_items=login_items_var.get(),
             profiles=profiles_var.get(),
             cron_system=cron_system_var.get(),
             systemd_system=systemd_system_var.get(),

@@ -8,6 +8,7 @@ from typing import Dict, List
 from scanner.utils import IS_MAC, run_capture_ext
 from scanner.core.common import add_row
 
+
 def scan_macos_launch_globals(rows: List[Dict[str, str]], *, log=None) -> None:
     if not IS_MAC:
         return
@@ -22,6 +23,7 @@ def scan_macos_launch_globals(rows: List[Dict[str, str]], *, log=None) -> None:
             if log:
                 log(f"[!] Accès impossible: {p}")
 
+
 def scan_macos_login_items(rows: List[Dict[str, str]], *, log=None) -> None:
     if not IS_MAC:
         return
@@ -33,6 +35,7 @@ def scan_macos_login_items(rows: List[Dict[str, str]], *, log=None) -> None:
         items = [x.strip() for x in out.strip().split(",") if x.strip()]
         for it in items:
             add_row(rows, "mac:loginitem", "", it, it, "INFO")
+
 
 def scan_macos_profiles(rows: List[Dict[str, str]], *, log=None) -> None:
     if not IS_MAC:
@@ -46,7 +49,8 @@ def scan_macos_profiles(rows: List[Dict[str, str]], *, log=None) -> None:
             if s:
                 add_row(rows, "mac:profiles", "", "", s, "INFO")
 
-def scan_persistence(rows: List[Dict[str, str]], *, log=None, verbose: bool=False) -> None:
+
+def scan_persistence(rows: List[Dict[str, str]], *, log=None, verbose: bool = False) -> None:
     if not IS_MAC:
         return
     user_agents = Path.home() / "Library" / "LaunchAgents"
