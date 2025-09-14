@@ -24,7 +24,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
-      # Dernière release → version numérique (retire préfixe type "v")
       - name: Get latest release tag
         id: latest
         run: |
@@ -42,7 +41,6 @@ jobs:
           echo "LATEST_VERSION=$LATEST_VERSION"   >> $GITHUB_ENV
           echo "LATEST_VERSION=$LATEST_VERSION"
 
-      # Lit version.txt (ligne 1) et nettoie
       - name: Read version.txt
         id: read_version
         run: |
@@ -56,7 +54,6 @@ jobs:
           echo "version=$VERSION"         >> $GITHUB_OUTPUT
           echo "VERSION=$VERSION"
 
-      # Compare version fichier vs dernière release
       - name: Compare versions
         id: compare
         run: |
@@ -71,7 +68,6 @@ jobs:
             echo "Pas de bump de version"
           fi
 
-      # Tag à créer/mettre à jour (softprops créera le tag s'il n'existe pas)
       - name: Compute tag
         id: tag
         run: |
@@ -115,19 +111,15 @@ jobs:
               launch_gui()
           "@
 
-      # Prépare icône + version info + manifest (réduit les heuristiques)
       - name: Prepare Windows resources (icon + version file + manifest)
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "build-res" | Out-Null
-
           $ico = "scanner/assets/IoC-Scanner.ico"
           if (!(Test-Path $ico)) { Write-Error "Icon not found: $ico"; exit 1 }
-
           $ver = "${{ needs.build.outputs.version }}"
           if ([string]::IsNullOrWhiteSpace($ver)) { $ver = "0.0.0" }
 
-          # VSVersionInfo (pour --version-file)
           Set-Content build-res\file_version.txt @"
           # UTF-8
           VSVersionInfo(
@@ -147,16 +139,15 @@ jobs:
             ]
           )
           "@
-          
-                    # Manifest sans élévation UAC
-                    Set-Content build-res\app.manifest @"
+
+          Set-Content build-res\app.manifest @"
           <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
           <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
             <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
               <security>
                 <requestedPrivileges>
                   <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
-                </requestedPrivileges>
+                </requestedExecutionLevel>
               </security>
             </trustInfo>
           </assembly>
@@ -196,7 +187,6 @@ jobs:
 
           if (!(Test-Path "dist\$exeName.exe")) { Write-Error "EXE GUI manquant"; exit 1 }
 
-      # Variante onedir utile si Defender bloque la onefile
       - name: Build Windows Standalone (GUI - onedir alternatif)
         shell: pwsh
         run: |
@@ -212,20 +202,7 @@ jobs:
             entry_gui.py
 
           if (!(Test-Path "dist\$dirName\$dirName.exe")) { Write-Error "EXE GUI onedir manquant"; exit 1 }
-
-          # Zip du onedir pour release
           Compress-Archive -Path "dist\$dirName\*" -DestinationPath "dist\$dirName.zip" -Force
-
-      # (Optionnel) Signature de code si secret fourni
-      - name: Code sign (Windows) - optional
-        if: ${{ secrets.WIN_CODE_SIGN_PFX && secrets.WIN_CODE_SIGN_PASS }}
-        shell: pwsh
-        run: |
-          $pfxPath = "$env:RUNNER_TEMP\codesign.pfx"
-          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String("${{ secrets.WIN_CODE_SIGN_PFX }}"))
-          $signtool = "C:\Program Files (x86)\Windows Kits\10\App Certification Kit\signtool.exe"
-          & $signtool sign /f $pfxPath /p "${{ secrets.WIN_CODE_SIGN_PASS }}" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "dist\${{ env.WINDOWS_CLI_EXE }}"
-          & $signtool sign /f $pfxPath /p "${{ secrets.WIN_CODE_SIGN_PASS }}" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "dist\${{ env.WINDOWS_GUI_EXE }}"
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
