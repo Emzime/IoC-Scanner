@@ -137,13 +137,8 @@ jobs:
             "--version-file","build-res\file_version.txt",
             "--manifest","build-res\app.manifest"
           )
-          
           if (Test-Path "scanner\assets\icon.ico") {
-            $args += @(
-              "--icon","scanner\assets\icon.ico",
-              "--add-data","scanner\assets\icon.ico;assets",
-              "--add-data","scanner\assets\icon.png;assets"
-            )
+            $args += @("--icon","scanner\assets\icon.ico","--add-data","scanner\assets\icon.ico;.")
           }
 
           & pyinstaller @args $entryPath
