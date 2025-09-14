@@ -2,7 +2,7 @@ name: CI & Release — IoC Scanner
 
 on:
   push:
-    branches: [ main ]         # ← on déclenche à chaque push sur main
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -38,6 +38,7 @@ jobs:
         env:
           TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
         run: |
+          set -e
           LATEST=$(curl -s -H "Authorization: token ${TOKEN}" \
             https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r '.tag_name // empty')
           [ -n "$LATEST" ] || LATEST="0.0.0"
@@ -56,7 +57,8 @@ jobs:
 
       - name: Compute tag
         id: tag
-        run: echo "tag=v${{ steps.read.outputs.version }}" >> $GITHUB_OUTPUT
+        run: |
+          echo "tag=v${{ steps.read.outputs.version }}" >> $GITHUB_OUTPUT
 
   tests:
     name: tests (python 3.13)
@@ -65,11 +67,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: '3.13' }
-      - run: |
-          python -m pip install --upgrade pip
-          python -m pip install pytest
+        with:
+          python-version: '3.13'
+      - name: Install test deps
+        run: |
+          python -m pip install --upgrade pip pytest
           [ -f requirements.txt ] && python -m pip install -r requirements.txt || true
+      - name: Run pytest
+        run: |
           python -m pytest -q || echo "No tests"
 
   build_pkg:
@@ -80,12 +85,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
-      - run: |
+        with:
+          python-version: '3.12'
+      - name: Build package (PEP 517)
+        run: |
           python -m pip install --upgrade pip build
-          [ -f pyproject.toml ] || [ -f setup.cfg ] || [ -f setup.py ] && python -m build || { mkdir -p dist && echo "no-package" > dist/NO_PYPROJECT; }
+          if [ -f pyproject.toml ] || [ -f setup.cfg ] || [ -f setup.py ]; then
+            python -m build
+          else
+            mkdir -p dist && echo "no-package" > dist/NO_PYPROJECT
+          fi
       - uses: actions/upload-artifact@v4
-        with: { name: dist, path: dist/* }
+        with:
+          name: dist
+          path: dist/*
 
   build_binaries_windows:
     name: build binaries (Windows)
@@ -95,10 +108,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
-      - shell: pwsh
+        with:
+          python-version: '3.12'
+
+      - name: Install PyInstaller
+        shell: pwsh
         run: |
-          python -m pip install --upgrade pip pyinstaller
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller
+
+      - name: Create entrypoints (CLI & GUI)
+        shell: pwsh
+        run: |
           Set-Content entry_cli.py @"
           from scanner.cli import main
           if __name__ == "__main__":
@@ -109,15 +130,23 @@ jobs:
           if __name__ == "__main__":
               launch_gui()
           "@
-                    pyinstaller --noconfirm --onefile --console  --name IoCScanner-CLI entry_cli.py
-                    pyinstaller --noconfirm --onefile --windowed --name IoCScanner-GUI entry_gui.py
-                - uses: actions/upload-artifact@v4
-                  with:
-                    name: windows-binaries
-                    path: |
-                      dist/IoCScanner-CLI.exe
-                      dist/IoCScanner-GUI.exe
-          
+
+      - name: Build (CLI console)
+        shell: pwsh
+        run: pyinstaller --noconfirm --onefile --console  --name IoCScanner-CLI entry_cli.py
+
+      - name: Build (GUI windowed)
+        shell: pwsh
+        run: pyinstaller --noconfirm --onefile --windowed --name IoCScanner-GUI entry_gui.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-binaries
+          path: |
+            dist/IoCScanner-CLI.exe
+            dist/IoCScanner-GUI.exe
+
+
   build_binaries_linux:
     name: build binaries (Linux)
     runs-on: ubuntu-latest
@@ -126,25 +155,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
-      - run: |
-          sudo apt-get update && sudo apt-get install -y python3-tk tk
+        with:
+          python-version: '3.12'
+
+      - name: Install system deps (Tk) & PyInstaller
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk tk
           python -m pip install --upgrade pip pyinstaller
+
+      - name: Create entrypoints (CLI & GUI)
+        run: |
           cat > entry_cli.py << 'PY'
           from scanner.cli import main
           if __name__ == "__main__":
-            main()
+              main()
           PY
-                  cat > entry_gui.py << 'PY'
+                    cat > entry_gui.py << 'PY'
           from scanner.gui import launch_gui
           if __name__ == "__main__":
-            launch_gui()
+              launch_gui()
           PY
-                  pyinstaller --noconfirm --onefile --console  --name IoCScanner-CLI entry_cli.py
-                  pyinstaller --noconfirm --onefile --windowed --name IoCScanner-GUI entry_gui.py
-                  tar -C dist -czf dist/IoCScanner-linux.tar.gz IoCScanner-CLI IoCScanner-GUI
-              - uses: actions/upload-artifact@v4
-                with: { name: linux-binaries, path: dist/IoCScanner-linux.tar.gz }
+
+      - name: Build (CLI console)
+        run: pyinstaller --noconfirm --onefile --console  --name IoCScanner-CLI entry_cli.py
+
+      - name: Build (GUI windowed)
+        run: pyinstaller --noconfirm --onefile --windowed --name IoCScanner-GUI entry_gui.py
+
+      - name: Tarball Linux binaries
+        run: tar -C dist -czf dist/IoCScanner-linux.tar.gz IoCScanner-CLI IoCScanner-GUI
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-binaries
+          path: dist/IoCScanner-linux.tar.gz
+
 
   build_binaries_macos:
     name: build binaries (macOS)
@@ -154,24 +200,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
-      - run: |
+        with:
+          python-version: '3.12'
+
+      - name: Install PyInstaller
+        run: |
           python -m pip install --upgrade pip pyinstaller
+
+      - name: Create entrypoints (CLI & GUI)
+        run: |
           cat > entry_cli.py << 'PY'
           from scanner.cli import main
           if __name__ == "__main__":
-            main()
+              main()
           PY
-                  cat > entry_gui.py << 'PY'
+                    cat > entry_gui.py << 'PY'
           from scanner.gui import launch_gui
           if __name__ == "__main__":
-            launch_gui()
+              launch_gui()
           PY
-                  pyinstaller --noconfirm --onefile --console  --name IoCScanner-CLI entry_cli.py
-                  pyinstaller --noconfirm --onefile --windowed --name IoCScanner-GUI entry_gui.py
-                  cd dist && zip -r IoCScanner-macos.zip IoCScanner-CLI IoCScanner-GUI
-              - uses: actions/upload-artifact@v4
-                with: { name: macos-binaries, path: dist/IoCScanner-macos.zip }
+
+      - name: Build (CLI console)
+        run: pyinstaller --noconfirm --onefile --console  --name IoCScanner-CLI entry_cli.py
+
+      - name: Build (GUI windowed)
+        run: pyinstaller --noconfirm --onefile --windowed --name IoCScanner-GUI entry_gui.py
+
+      - name: Zip macOS binaries
+        run: |
+          cd dist && zip -r IoCScanner-macos.zip IoCScanner-CLI IoCScanner-GUI
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-binaries
+          path: dist/IoCScanner-macos.zip
+
 
   release:
     name: GitHub Release
@@ -196,3 +259,4 @@ jobs:
           files: dist/**
         env:
           GITHUB_TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
+
