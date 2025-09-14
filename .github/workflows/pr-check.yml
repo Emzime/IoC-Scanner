@@ -1,3 +1,4 @@
+# .github\workflows\pr-check.yml
 name: PR Check — version bump
 
 on:
@@ -47,8 +48,8 @@ jobs:
         run: |
           echo "Comparaison: NEW=${{ env.VERSION }} ; LATEST=${{ env.LATEST_VERSION }}"
           if dpkg --compare-versions "${{ env.VERSION }}" gt "${{ env.LATEST_VERSION }}"; then
-            echo "✅ Version plus élevée → OK"
+            echo "✅ Version plus élevée → Pull Request possible"
           else
-            echo "❌ Version ${{ env.VERSION }} n’est pas > ${{ env.LATEST_VERSION }}"
+            echo "❌ Version moins élevée → Pull Request impossible"
             exit 1
           fi
