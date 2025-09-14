@@ -39,14 +39,14 @@ def scan_windows_startup_folders(rows: List[Dict[str, str]], *, log=None) -> Non
         Path(os.environ.get("APPDATA", "")) / r"Microsoft\Windows\Start Menu\Programs\Startup",
         Path(os.environ.get("PROGRAMDATA", "")) / r"Microsoft\Windows\Start Menu\Programs\Startup",
     ]
-    exts = {".lnk", ".exe", ".bat", ".cmd", ".vbs", ".ps1", ".js"}
+    ext = {".lnk", ".exe", ".bat", ".cmd", ".vbs", ".ps1", ".js"}
     for p in paths:
         try:
             if p and p.exists():
                 if log:
                     log(f"[i] Startup folder: {p}")
                 for f in p.iterdir():
-                    if f.is_file() and f.suffix.lower() in exts:
+                    if f.is_file() and f.suffix.lower() in ext:
                         sev = "MEDIUM"
                         target = resolve_shortcut_target_windows(f) if f.suffix.lower() == ".lnk" else None
                         target_or_self = target or str(f)
@@ -66,7 +66,7 @@ def scan_windows_services(rows: List[Dict[str, str]], *, log=None) -> None:
             name = (rec.get("Name") or "").strip()
             display = (rec.get("DisplayName") or "").strip()
             path = (rec.get("PathName") or "").strip()
-            startmode = (rec.get("StartMode") or "").strip()
+            start_mode = (rec.get("StartMode") or "").strip()
             state = (rec.get("State") or "").strip()
             if not name:
                 continue
@@ -75,14 +75,14 @@ def scan_windows_services(rows: List[Dict[str, str]], *, log=None) -> None:
                 exe = exe.split('"', 2)[1] if '"' in exe[1:] else exe
             else:
                 exe = exe.split(" ", 1)[0]
-            if startmode.lower().startswith("auto"):
+            if start_mode.lower().startswith("auto"):
                 sev = "INFO"
                 low = (exe or path).lower()
                 if low and not (low.startswith(r"c:\windows") or low.startswith(r"c:\program files")):
                     sev = "MEDIUM"
                     if any(x in low for x in ["\\appdata\\", "\\users\\", "\\temp\\"]):
                         sev = "HIGH"
-                add_row(rows, "win:service", name, f"{display} [{state}|{startmode}]", path or "(no path)", sev)
+                add_row(rows, "win:service", name, f"{display} [{state}|{start_mode}]", path or "(no path)", sev)
 
     code, out, _ = run_capture_ext(["wmic", "service", "get", "Name,DisplayName,StartMode,State,PathName", "/FORMAT:CSV"])
     if code == 0 and out:
@@ -122,8 +122,8 @@ def scan_windows_defender_exclusions(rows: List[Dict[str, str]], *, log=None) ->
                             j = 0
                             while True:
                                 try:
-                                    vname, vdata, _ = winreg.EnumValue(h2, j); j += 1
-                                    add_row(rows, "win:defender:excl", name, vname, str(vdata), "MEDIUM")
+                                    v_name, vdata, _ = winreg.EnumValue(h2, j); j += 1
+                                    add_row(rows, "win:defender:excl", name, v_name, str(vdata), "MEDIUM")
                                 except OSError:
                                     break
                     except OSError:
@@ -241,10 +241,10 @@ def scan_persistence(rows: List[Dict[str, str]], *, log=None, verbose: bool=Fals
         for k in alts:
             if k in d:
                 return d[k] or ""
-        dlower = {k.lower(): k for k in d.keys()}
+        d_lower = {k.lower(): k for k in d.keys()}
         for want in alts:
             w = want.lower()
-            for kl, korig in dlower.items():
+            for kl, korig in d_lower.items():
                 if w in kl:
                     return d[korig] or ""
         return ""
