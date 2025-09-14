@@ -115,43 +115,66 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "build-res" | Out-Null
+
           $ico = "scanner/assets/IoC-Scanner.ico"
           if (!(Test-Path $ico)) { Write-Error "Icon not found: $ico"; exit 1 }
+
           $ver = "${{ needs.build.outputs.version }}"
           if ([string]::IsNullOrWhiteSpace($ver)) { $ver = "0.0.0" }
 
-          Set-Content build-res\file_version.txt @"
+          # VSVersionInfo (inchangé)
+          Set-Content build-res\file_version.txt @'
           # UTF-8
           VSVersionInfo(
             ffi=FixedFileInfo(
-              filevers=($($ver -replace '\.', ', ')), prodvers=($($ver -replace '\.', ', ')),
+              filevers=({{VER}}, 0), prodvers=({{VER}}, 0),
               mask=0x3f, flags=0x0, OS=0x40004, fileType=0x1, subtype=0x0, date=(0, 0)
             ),
             kids=[
               StringFileInfo([StringTable('040904B0', [
                 StringStruct('CompanyName', 'IoC-Scanner'),
                 StringStruct('FileDescription', 'IoC-Scanner'),
-                StringStruct('FileVersion', '$ver'),
+                StringStruct('FileVersion', '{{VERSTR}}'),
                 StringStruct('ProductName', 'IoC-Scanner'),
-                StringStruct('ProductVersion', '$ver')
+                StringStruct('ProductVersion', '{{VERSTR}}')
               ])]),
               VarFileInfo([VarStruct('Translation', [1033, 1200])])
             ]
           )
-          "@
+          '@.Replace('{{VER}}', ($ver -replace '\.', ', ')).Replace('{{VERSTR}}', $ver)
 
-          Set-Content build-res\app.manifest @"
+          # Manifest XML valide
+          Set-Content build-res\app.manifest @'
           <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
           <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
             <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
               <security>
                 <requestedPrivileges>
                   <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
-                </requestedExecutionLevel>
+                </requestedPrivileges>
               </security>
             </trustInfo>
+          
+            <!-- Compatibilité Windows 10/11 -->
+            <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+              <application>
+                <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+              </application>
+            </compatibility>
+          
+            <!-- Thèmes / Common Controls v6 -->
+            <dependency>
+              <dependentAssembly>
+                <assemblyIdentity type="win32"
+                  name="Microsoft.Windows.Common-Controls"
+                  version="6.0.0.0"
+                  processorArchitecture="*"
+                  publicKeyToken="6595b64144ccf1df"
+                  language="*"/>
+              </dependentAssembly>
+            </dependency>
           </assembly>
-          "@
+          '@
 
       - name: Build Windows Standalone (CLI)
         shell: pwsh
