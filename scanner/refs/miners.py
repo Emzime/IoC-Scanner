@@ -24,7 +24,7 @@ DEFAULT_MINER_FILE_HINTS: List[str] = [
     r"phoenixminer(\.exe)?$",
     r"astrominer(\.exe)?$",
     r"cpuminer(\.exe)?$",
-    r"minerd(\.exe)?$",
+    r"minerd(\.exe)?$"
 ]
 # END DEFAULT_MINER_FILE_HINTS (AUTO)
 
@@ -40,7 +40,7 @@ DEFAULT_MINER_PROC_HINTS: List[str] = [
     r"\bphoenixminer\b",
     r"\bastrominer\b",
     r"\bcpuminer\b",
-    r"\bminerd\b",
+    r"\bminerd\b"
 ]
 # END DEFAULT_MINER_PROC_HINTS (AUTO)
 
@@ -52,11 +52,11 @@ DEFAULT_SUSPICIOUS_SCRIPT_PATTERNS: List[str] = [
     r"bitsadmin\s+/transfer",
     r"powershell\.exe\s+-enc\s+[A-Za-z0-9+/=]+",
     r"Add-MpPreference\s+-Exclusion(Path|Process|Extension)",
-    r"reg(?:\.exe)?\s+add\s+HK(?:CU|LM)\\",
+    "reg(?:\\.exe)?\\s+add\\s+HK(?:CU|LM)\\\\",
     r"(?:schtasks|at)\s+/create",
     r"(?:crontab|systemctl)\s+(?:-|\w+)",
     r"chmod\s+\+x\s+/tmp/.*",
-    r"base64\s+-d\s+.+\|\s*(bash|sh|zsh|python|python3)",
+    r"base64\s+-d\s+.+\|\s*(bash|sh|zsh|python|python3)"
 ]
 # END DEFAULT_SUSPICIOUS_SCRIPT_PATTERNS (AUTO)
 
