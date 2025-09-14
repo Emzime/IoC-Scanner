@@ -12,53 +12,48 @@ from scanner.utils import fetch_json, SIGNATURE_BASE_URL, CACHE_DIR
 # Valeurs de secours (utilisées si le dépôt de signatures est indisponible)
 # ---------------------------------------------------------------------------
 
-# BEGIN DEFAULT_MINER_FILE_HINTS (AUTO)
-DEFAULT_MINER_FILE_HINTS: List[str] = [
-    r"xmrig(\.exe)?$",
-    r"lolminer(\.exe)?$",
-    r"nbminer(\.exe)?$",
-    r"ethminer(\.exe)?$",
-    r"teamredminer(\.exe)?$",
-    r"t-rex(\.exe)?$",
-    r"gminer(\.exe)?$",
-    r"phoenixminer(\.exe)?$",
-    r"astrominer(\.exe)?$",
-    r"cpuminer(\.exe)?$",
-    r"minerd(\.exe)?$",
-]
-# END DEFAULT_MINER_FILE_HINTS (AUTO)
+# BEGIN DEFAULT_MINER_FILE_HINTS (AUTO)DEFAULT_MINER_FILE_HINTS: List[str] = [
+    "xmrig(\.exe)?$",
+    "lolminer(\.exe)?$",
+    "nbminer(\.exe)?$",
+    "ethminer(\.exe)?$",
+    "teamredminer(\.exe)?$",
+    "t-rex(\.exe)?$",
+    "gminer(\.exe)?$",
+    "phoenixminer(\.exe)?$",
+    "astrominer(\.exe)?$",
+    "cpuminer(\.exe)?$",
+    "minerd(\.exe)?$",
+    "__test__fake_miner(\.exe)?$"
+]# END DEFAULT_MINER_FILE_HINTS (AUTO)
 
-# BEGIN DEFAULT_MINER_PROC_HINTS (AUTO)
-DEFAULT_MINER_PROC_HINTS: List[str] = [
-    r"\bxmrig\b",
-    r"\blolminer\b",
-    r"\bnbminer\b",
-    r"\bethminer\b",
-    r"\bteamredminer\b",
-    r"\bt-rex\b",
-    r"\bgminer\b",
-    r"\bphoenixminer\b",
-    r"\bastrominer\b",
-    r"\bcpuminer\b",
-    r"\bminerd\b",
-]
-# END DEFAULT_MINER_PROC_HINTS (AUTO)
+# BEGIN DEFAULT_MINER_PROC_HINTS (AUTO)DEFAULT_MINER_PROC_HINTS: List[str] = [
+    "\bxmrig\b",
+    "\blolminer\b",
+    "\bnbminer\b",
+    "\bethminer\b",
+    "\bteamredminer\b",
+    "\bt-rex\b",
+    "\bgminer\b",
+    "\bphoenixminer\b",
+    "\bastrominer\b",
+    "\bcpuminer\b",
+    "\bminerd\b"
+]# END DEFAULT_MINER_PROC_HINTS (AUTO)
 
-# BEGIN DEFAULT_SUSPICIOUS_SCRIPT_PATTERNS (AUTO)
-DEFAULT_SUSPICIOUS_SCRIPT_PATTERNS: List[str] = [
-    r"curl\s+[^|]+?\|\s*(bash|sh|zsh|python|python3)",
-    r"wget\s+[^|]+?\|\s*(bash|sh|zsh|python|python3)",
-    r"Invoke-WebRequest.+\|\s*iex",
-    r"bitsadmin\s+/transfer",
-    r"powershell\.exe\s+-enc\s+[A-Za-z0-9+/=]+",
-    r"Add-MpPreference\s+-Exclusion(Path|Process|Extension)",
-    r"reg(?:\.exe)?\s+add\s+HK(?:CU|LM)\\",
-    r"(?:schtasks|at)\s+/create",
-    r"(?:crontab|systemctl)\s+(?:-|\w+)",
-    r"chmod\s+\+x\s+/tmp/.*",
-    r"base64\s+-d\s+.+\|\s*(bash|sh|zsh|python|python3)",
-]
-# END DEFAULT_SUSPICIOUS_SCRIPT_PATTERNS (AUTO)
+# BEGIN DEFAULT_SUSPICIOUS_SCRIPT_PATTERNS (AUTO)DEFAULT_SUSPICIOUS_SCRIPT_PATTERNS: List[str] = [
+    "curl\s+[^|]+?\|\s*(bash|sh|zsh|python|python3)",
+    "wget\s+[^|]+?\|\s*(bash|sh|zsh|python|python3)",
+    "Invoke-WebRequest.+\|\s*iex",
+    "bitsadmin\s+/transfer",
+    "powershell\.exe\s+-enc\s+[A-Za-z0-9+/=]+",
+    "Add-MpPreference\s+-Exclusion(Path|Process|Extension)",
+    "reg(?:\.exe)?\s+add\s+HK(?:CU|LM)\\",
+    "(?:schtasks|at)\s+/create",
+    "(?:crontab|systemctl)\s+(?:-|\w+)",
+    "chmod\s+\+x\s+/tmp/.*",
+    "base64\s+-d\s+.+\|\s*(bash|sh|zsh|python|python3)"
+]# END DEFAULT_SUSPICIOUS_SCRIPT_PATTERNS (AUTO)
 
 
 # ---------------------------------------------------------------------------
