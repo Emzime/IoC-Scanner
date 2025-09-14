@@ -77,10 +77,11 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Python 3.13
+      # ⚠️ Optionnel, mais recommandé : 3.11 est souvent mieux toléré par les AV que 3.13
+      - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.11'
           cache: 'pip'
 
       - name: Install deps (PyInstaller + project)
@@ -110,7 +111,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path "build-res" | Out-Null
           $ver = "${{ needs.build.outputs.version }}"; if ([string]::IsNullOrWhiteSpace($ver)) { $ver = "0.0.0" }
-
+  
           # VSVersionInfo
           Set-Content build-res\file_version.txt @'
           # UTF-8
@@ -134,8 +135,8 @@ jobs:
           (Get-Content build-res\file_version.txt -Raw).
             Replace('{{VER}}', ($ver -replace '\.', ', ')).
             Replace('{{VERSTR}}', $ver) | Set-Content build-res\file_version.txt
-
-          # Manifest asInvoker + compat + Common-Controls v6
+  
+          # Manifest (asInvoker + compat + Common-Controls v6)
           Set-Content build-res\app.manifest @'
           <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
           <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
@@ -164,66 +165,56 @@ jobs:
           </assembly>
           '@
 
-      - name: Build Windows (CLI) — style "Run"
+      - name: Build Windows (CLI) — onefile, runtime local (pas %TEMP%)
         shell: pwsh
         run: |
           $version   = "${{ needs.build.outputs.version }}"; if ([string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
           $exeName   = "IoCScanner_CLI_Windows_v$version"
           "WINDOWS_CLI_EXE=$exeName.exe" >> $env:GITHUB_ENV
           $entryPath = (Resolve-Path "entry_cli.py").Path
-
+  
           $args = @(
             "--noconfirm","--onefile","--clean","--noupx",
             "--console",
+            "--runtime-tmpdir",".\_ioc_rt",    # ← évite %TEMP%
             "--name",$exeName,
-            "--collect-all","tkinterdnd2",
-            "--hidden-import","tkinterdnd2",
             "--version-file","build-res\file_version.txt",
-            "--manifest","build-res\app.manifest"
+            "--manifest","build-res\app.manifest",
+            "--hidden-import","tkinterdnd2"    # suffisant pour ce package
           )
-          # Icône directe dans scanner\assets
           if (Test-Path "scanner\assets\icon.ico") {
-            $args += @("--icon","scanner\assets\icon.ico")
+            $args += @("--icon","scanner\assets\icon.ico")   # pas de --add-data
           }
-
+  
           & pyinstaller @args $entryPath
-
           if (!(Test-Path "dist\$exeName.exe")) {
-            Write-Error "Build terminé mais EXE manquant dans dist/."
-            exit 1
-          } else {
-            Write-Host "✅ EXE généré: dist\$exeName.exe"
+            Write-Error "EXE CLI manquant"; exit 1
           }
 
-      - name: Build Windows (GUI) — style "Run"
+      - name: Build Windows (GUI) — onefile, runtime local (pas %TEMP%)
         shell: pwsh
         run: |
           $version   = "${{ needs.build.outputs.version }}"; if ([string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
           $exeName   = "IoCScanner_GUI_Windows_v$version"
           "WINDOWS_GUI_EXE=$exeName.exe" >> $env:GITHUB_ENV
           $entryPath = (Resolve-Path "entry_gui.py").Path
-
+  
           $args = @(
             "--noconfirm","--onefile","--clean","--noupx",
             "--windowed",
+            "--runtime-tmpdir",".\_ioc_rt",    # ← évite %TEMP%
             "--name",$exeName,
-            "--collect-all","tkinterdnd2",
-            "--hidden-import","tkinterdnd2",
             "--version-file","build-res\file_version.txt",
-            "--manifest","build-res\app.manifest"
+            "--manifest","build-res\app.manifest",
+            "--hidden-import","tkinterdnd2"
           )
-          # Icône directe dans scanner\assets
           if (Test-Path "scanner\assets\icon.ico") {
-            $args += @("--icon","scanner\assets\icon.ico")
+            $args += @("--icon","scanner\assets\icon.ico")   # pas de --add-data
           }
-
+  
           & pyinstaller @args $entryPath
-
           if (!(Test-Path "dist\$exeName.exe")) {
-            Write-Error "Build terminé mais EXE manquant dans dist/."
-            exit 1
-          } else {
-            Write-Host "✅ EXE généré: dist\$exeName.exe"
+            Write-Error "EXE GUI manquant"; exit 1
           }
 
       - name: Upload Windows artifacts
